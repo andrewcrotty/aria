@@ -4,14 +4,15 @@
 
 #pragma once
 
+#include "common/Barrier.h"
 #include "core/Manager.h"
 #include "core/Partitioner.h"
 #include "protocol/Aria/Aria.h"
-#include "protocol/Aria/AriaExecutor.h"
 #include "protocol/Aria/AriaHelper.h"
 #include "protocol/Aria/AriaTransaction.h"
 
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -38,9 +39,54 @@ public:
 
     storages.resize(context.batch_size);
     transactions.resize(context.batch_size);
+
+#ifdef USE_BARRIER
+    if (context.coordinator_num == 1) {
+#ifdef NO_MANAGER
+      no_manager = true;
+#endif
+      std::size_t nthreads = context.worker_num + (no_manager ? 0 : 1);
+      barrier = std::make_unique<Barrier>(nthreads);
+    }
+#endif
+  }
+
+  bool prepare_local_batch() {
+    if (stopFlag.load()) {
+      set_worker_status(ExecutorStatus::EXIT);
+      return false;
+    }
+
+    epoch.fetch_add(1);
+    cleanup_batch();
+
+    set_worker_status(ExecutorStatus::Aria_READ);
+    return true;
+  }
+
+  void local_barrier_start() {
+    for (;;) {
+      bool running = prepare_local_batch();
+
+      // Wait for batch preparation.
+      barrier->wait(id);
+
+      if (!running)
+        return;
+
+      // Wait for snapshot reads and reservations.
+      barrier->wait(id);
+
+      // Wait for commits.
+      barrier->wait(id);
+    }
   }
 
   void coordinator_start() override {
+    if (barrier) {
+      local_barrier_start();
+      return;
+    }
 
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
@@ -156,5 +202,7 @@ public:
   std::vector<StorageType> storages;
   std::vector<std::unique_ptr<TransactionType>> transactions;
   std::atomic<uint32_t> total_abort;
+  std::unique_ptr<Barrier> barrier;
+  bool no_manager = false;
 };
 } // namespace aria
