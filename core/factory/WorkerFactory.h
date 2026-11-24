@@ -147,22 +147,19 @@ public:
       using WorkloadType =
           typename InferType<Context>::template WorkloadType<TransactionType>;
 
-      // create manager
-
       auto manager = std::make_shared<AriaManager<WorkloadType>>(
           coordinator_id, context.worker_num, db, context, stop_flag);
-
-      // create worker
 
       for (auto i = 0u; i < context.worker_num; i++) {
         workers.push_back(std::make_shared<AriaExecutor<WorkloadType>>(
             coordinator_id, i, db, context, manager->transactions,
             manager->storages, manager->epoch, manager->worker_status,
             manager->total_abort, manager->n_completed_workers,
-            manager->n_started_workers));
+            manager->n_started_workers, manager));
       }
 
-      workers.push_back(manager);
+      if (!manager->no_manager)
+        workers.push_back(manager);
     } else if (context.protocol == "AriaFB") {
 
       using TransactionType = aria::AriaFBTransaction;
