@@ -1,10 +1,31 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.12)
 project(aria)
 
 #set(CMAKE_BUILD_TYPE Debug)
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -Wall -Wno-long-long -Wno-unused-variable -Wno-variadic-macros -pedantic")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -Wall -Wno-long-long -Wno-unused-variable -Wno-variadic-macros -pedantic -O2")
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+option(USE_BARRIER "Use barriers for Aria" ON)
+option(USE_SMC_BARRIER "Use SmcBarrier" OFF)
+option(NO_MANAGER "Use worker 0 as manager" OFF)
+
+if(USE_BARRIER)
+    add_definitions(-DUSE_BARRIER)
+endif()
+
+if(USE_SMC_BARRIER)
+    add_definitions(-DUSE_SMC_BARRIER)
+
+    set(SMC_INCLUDE_DIR "" CACHE PATH "Directory containing smc_barrier.hpp")
+
+    include_directories(${SMC_INCLUDE_DIR})
+endif()
+
+if(NO_MANAGER)
+    add_definitions(-DNO_MANAGER)
+endif()
 
 find_library(jemalloc_lib jemalloc) # jemalloc 5.0
 
