@@ -165,11 +165,10 @@ public:
               << ", local: " << 100.0 * total_local / total_commit << " %";
 
     workerStopFlag.store(true);
-
-    for (auto i = 0u; i < threads.size(); i++) {
-      workers[i]->onExit();
-      threads[i].join();
-    }
+    for (auto &thread : threads)
+      thread.join();
+    for (auto &worker : workers)
+      worker->onExit();
 
     // gather throughput
     double sum_commit = gather(1.0 * total_commit / count);
