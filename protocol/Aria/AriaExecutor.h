@@ -13,9 +13,11 @@
 
 #include "protocol/Aria/Aria.h"
 #include "protocol/Aria/AriaHelper.h"
+#include "protocol/Aria/AriaManager.h"
 #include "protocol/Aria/AriaMessage.h"
 
 #include <chrono>
+#include <memory>
 #include <thread>
 
 namespace aria {
@@ -47,12 +49,14 @@ public:
                std::atomic<uint32_t> &worker_status,
                std::atomic<uint32_t> &total_abort,
                std::atomic<uint32_t> &n_complete_workers,
-               std::atomic<uint32_t> &n_started_workers)
+               std::atomic<uint32_t> &n_started_workers,
+               std::shared_ptr<AriaManager<Workload>> manager)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), storages(storages), epoch(epoch),
         worker_status(worker_status), total_abort(total_abort),
         n_complete_workers(n_complete_workers),
         n_started_workers(n_started_workers),
+        manager(manager),
         partitioner(PartitionerFactory::create_partitioner(
             context.partitioner, coordinator_id, context.coordinator_num)),
         workload(coordinator_id, db, random, *partitioner),
@@ -71,9 +75,35 @@ public:
 
   ~AriaExecutor() = default;
 
+  void local_barrier_start() {
+    auto &barrier = *manager->barrier;
+    const bool prepare_batch = manager->no_manager && id == 0;
+
+    for (;;) {
+      if (prepare_batch)
+        manager->prepare_local_batch();
+
+      barrier.wait(id);
+
+      if (static_cast<ExecutorStatus>(worker_status.load()) == ExecutorStatus::EXIT)
+        return;
+
+      read_snapshot();
+      barrier.wait(id);
+      commit_transactions();
+      barrier.wait(id);
+    }
+  }
+
   void start() override {
 
     LOG(INFO) << "AriaExecutor " << id << " started. ";
+
+    if (manager->barrier) {
+      local_barrier_start();
+      LOG(INFO) << "AriaExecutor " << id << " exits. ";
+      return;
+    }
 
     for (;;) {
 
@@ -540,6 +570,7 @@ private:
   std::vector<StorageType> &storages;
   std::atomic<uint32_t> &epoch, &worker_status, &total_abort;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  std::shared_ptr<AriaManager<Workload>> manager;
   std::unique_ptr<Partitioner> partitioner;
   WorkloadType workload;
   RandomType random;
