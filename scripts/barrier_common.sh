@@ -27,19 +27,24 @@ build_all() {
   done
 }
 
-# run_aria BUILD BENCH THREADS SEED BATCHES LOG: one deterministic run; returns
-# its exit status. One partition per worker.
+# Default transactions per batch (aria's defaults).
+declare -A DEFAULT_BATCH_SIZE=([ycsb]=1000 [tpcc]=500)
+
+# run_aria BUILD BENCH THREADS SEED BATCHES LOG [BATCH_SIZE]: one deterministic
+# run; returns its exit status. One partition per worker.
 run_aria() {
   local build=$1 bench=$2 n=$3 seed=$4 batches=$5 log=$6
+  local size=${7:-${DEFAULT_BATCH_SIZE[$bench]}}
   local args=(--logtostderr=1 --id=0 --servers=127.0.0.1:10010 --protocol=Aria
-              --threads="$n" --partition_num="$n" --seed="$seed" --batches="$batches")
+              --threads="$n" --partition_num="$n" --seed="$seed" --batches="$batches"
+              --batch_size="$size")
   if [[ $bench == ycsb ]]; then
     # YCSB writes the same value every time (its value generator is fixed-seed),
     # so its final state is just the set of keys ever written: keep enough keys
     # (the default 200000 per partition) that some stay unwritten.
-    args+=(--batch_size=1000 --keys=200000)
+    args+=(--keys=200000)
   else
-    args+=(--batch_size=500 --query=mixed)
+    args+=(--query=mixed)
   fi
   timeout 600 "build-det-$build/bench_$bench" "${args[@]}" > "$log" 2>&1
 }
