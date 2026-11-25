@@ -17,7 +17,9 @@
 # Usage: scripts/compare_barrier_speed.sh [-t "1 2 4 8"] [-B "10 100 1000"] [-r REPS]
 #                                         [-y YCSB_TXNS] [-c TPCC_TXNS] [-s SEED] [-o OUTDIR]
 # Run from the repo root (inside barrier_bench's dev shell for the dependencies).
-# Every run goes to OUTDIR/results.csv.
+# Every run goes to OUTDIR/results.csv. Rerunning with the same OUTDIR resumes:
+# runs already in results.csv are skipped (so use the same -y/-c/-s), and the
+# summary covers this invocation's -t and -B.
 set -euo pipefail
 source "$(dirname "$0")/barrier_common.sh"
 
@@ -38,7 +40,7 @@ while getopts "t:B:r:y:c:s:o:" opt; do
     c) TPCC_TXNS=$OPTARG ;;
     s) SEED=$OPTARG ;;
     o) OUT=$OPTARG ;;
-    *) sed -n '2,21p' "$0"; exit 2 ;;
+    *) sed -n '2,23p' "$0"; exit 2 ;;
   esac
 done
 
@@ -49,7 +51,18 @@ mkdir -p "$OUT"
 build_all "$OUT"
 
 CSV="$OUT/results.csv"
-echo "bench,batch_size,threads,build,rep,elapsed_s,ms_per_batch,commit,abort,checksum" > "$CSV"
+HEADER="bench,batch_size,threads,build,rep,elapsed_s,ms_per_batch,commit,abort,checksum"
+if [[ -s $CSV ]]; then
+  if [[ $(head -1 "$CSV") != "$HEADER" ]]; then
+    echo "FAIL: $CSV exists with a different header"
+    exit 1
+  fi
+  echo "== resuming: $(($(wc -l < "$CSV") - 1)) runs already in $CSV"
+else
+  echo "$HEADER" > "$CSV"
+fi
+# done_run BENCH SIZE THREADS BUILD REP: is that run already recorded?
+done_run() { grep -q "^$1,$2,$3,$4,$5," "$CSV"; }
 read -ra builds <<< "$BUILDS"
 fail=0
 
@@ -62,6 +75,7 @@ for bench in ycsb tpcc; do
       for ((rep = 1; rep <= REPS; rep++)); do
         for ((k = 0; k < ${#builds[@]}; k++)); do
           b=${builds[(k + rep) % ${#builds[@]}]}
+          done_run "$bench" "$size" "$n" "$b" "$rep" && continue
           log="$OUT/${bench}_B${size}_${b}_t${n}_r${rep}.log"
           if ! run_aria "$b" "$bench" "$n" "$SEED" "$batches" "$log" "$size"; then
             echo "run failed: $log"

@@ -1,10 +1,17 @@
 # Shared by check_barrier_determinism.sh and compare_barrier_speed.sh (source it).
 #
-# The three barrier builds of Aria, each in build-det-<name>:
+# The three barrier builds of Aria, each in $BUILD_PREFIX-<name>:
 #
 #   std    USE_BARRIER=ON  (std::barrier)
 #   smc    USE_BARRIER=ON  USE_SMC_BARRIER=ON  (SmcBarrier; needs ASMJIT_ROOT or $ASMJIT)
 #   nobar  USE_BARRIER=OFF (Aria's original signaling, no barrier at all)
+
+# Environment overrides:
+#   BUILD_PREFIX  build directory prefix (default build-det; use a per-host prefix
+#                 when several machines share one checkout)
+#   RUN_TIMEOUT   seconds before one benchmark run is killed (default 600)
+BUILD_PREFIX=${BUILD_PREFIX:-build-det}
+RUN_TIMEOUT=${RUN_TIMEOUT:-600}
 
 BUILDS="std smc nobar"
 declare -A CMAKE_FLAGS=(
@@ -18,8 +25,8 @@ build_all() {
   local b
   for b in $BUILDS; do
     echo "== building $b (log: $1/build-$b.log)"
-    if ! { cmake -S . -B "build-det-$b" -DCMAKE_BUILD_TYPE=Release ${CMAKE_FLAGS[$b]} &&
-           make -C "build-det-$b" -j"$(nproc)" bench_ycsb bench_tpcc; } > "$1/build-$b.log" 2>&1; then
+    if ! { cmake -S . -B "$BUILD_PREFIX-$b" -DCMAKE_BUILD_TYPE=Release ${CMAKE_FLAGS[$b]} &&
+           make -C "$BUILD_PREFIX-$b" -j"$(nproc)" bench_ycsb bench_tpcc; } > "$1/build-$b.log" 2>&1; then
       tail -20 "$1/build-$b.log"
       echo "FAIL: build $b"
       exit 1
@@ -46,7 +53,7 @@ run_aria() {
   else
     args+=(--query=mixed)
   fi
-  timeout 600 "build-det-$build/bench_$bench" "${args[@]}" > "$log" 2>&1
+  timeout "$RUN_TIMEOUT" "$BUILD_PREFIX-$build/bench_$bench" "${args[@]}" > "$log" 2>&1
 }
 
 # log_totals LOG -> "commit abort checksum" ("? ? ?" where missing)
