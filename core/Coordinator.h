@@ -76,6 +76,7 @@ public:
 
     LOG(INFO) << "Coordinator starts to run " << workers.size() << " workers.";
 
+    auto runStart = std::chrono::steady_clock::now(); // --batches timing
     for (auto i = 0u; i < workers.size(); i++) {
       threads.emplace_back(&Worker::start, workers[i].get());
       if (context.cpu_affinity) {
@@ -85,9 +86,13 @@ public:
 
     if (context.batches > 0) {
       // --batches: the manager stops after that many batches and the workers
-      // exit on their own; report totals for the whole run.
+      // exit on their own; report totals and the time from launching the
+      // workers to the last one exiting (the same work in every build).
       for (auto &thread : threads)
         thread.join();
+      double elapsed = std::chrono::duration<double>(
+                           std::chrono::steady_clock::now() - runStart)
+                           .count();
       uint64_t commit = 0, abort = 0;
       for (auto &worker : workers) {
         commit += worker->n_commit.load();
@@ -97,6 +102,9 @@ public:
       }
       LOG(INFO) << "batches: " << context.batches << " total commit: " << commit
                 << " total abort: " << abort;
+      LOG(INFO) << "elapsed: " << elapsed << " s, "
+                << 1e3 * elapsed / context.batches << " ms/batch, "
+                << commit / elapsed << " commit/s";
     } else {
       // run timeToRun seconds
       auto timeToRun = 25, warmup = 10, cooldown = 5;
