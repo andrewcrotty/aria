@@ -32,11 +32,21 @@ BASELINE = "#8a8985"
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 
 
+def ht_level(workers, cores):
+    """Hyperthreading level of a run: aria pins 2 I/O threads and the manager next
+    to the workers, on consecutive CPUs from 0."""
+    pinned = workers + 3
+    return "no HT" if pinned <= cores else f"{round(100 * (pinned - cores) / cores)}% HT"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv")
     ap.add_argument("-o", "--out")
     ap.add_argument("--title", default="Aria batch time: speedup over std::barrier (higher is better)")
+    ap.add_argument("--cores", type=int,
+                    help="physical cores; labels each panel no HT / x%% HT (assumes CPUs "
+                         "0..cores-1 are distinct cores, as on dubliner and manchego)")
     args = ap.parse_args()
     out = Path(args.out) if args.out else Path(args.csv).with_name("speedup_vs_batch")
 
@@ -50,9 +60,13 @@ def main():
 
     plt.rcParams.update({"font.size": 10, "axes.edgecolor": INK_2, "axes.labelcolor": INK_2,
                          "xtick.color": INK_2, "ytick.color": INK_2})
-    fig, axes = plt.subplots(1, len(threads), figsize=(5.2 * len(threads), 4.6),
+    ncols = min(4, len(threads))
+    nrows = -(-len(threads) // ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 4.2 * nrows + 0.6),
                              sharey=True, facecolor=SURFACE, squeeze=False)
-    for ax, n in zip(axes[0], threads):
+    for ax in axes.flat[len(threads):]:
+        ax.set_visible(False)
+    for ax, n in zip(axes.flat, threads):
         ax.set_facecolor(SURFACE)
         ax.axhline(1.0, color=BASELINE, lw=1.5, ls=(0, (4, 3)), zorder=1)
         for bench, (_, ls, marker) in BENCH_STYLE.items():
@@ -73,14 +87,17 @@ def main():
                             ms=6, mec=SURFACE, mew=1.2, elinewidth=1, capsize=2.5, zorder=3)
         ax.set_xscale("log")
         ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}×"))
-        ax.set_xlabel("batch size ÷ benchmark default (YCSB 1000, TPC-C 500)")
-        ax.set_title(f"{n} worker threads", loc="left", color=INK, fontsize=11)
+        ax.set_title(f"{n} worker thread{'' if n == 1 else 's'}" + (f" ({ht_level(n, args.cores)})" if args.cores else ""),
+                     loc="left", color=INK, fontsize=11)
         ax.grid(axis="y", color=GRID, lw=0.8)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-    axes[0][0].set_ylabel("speedup in median ms/batch vs std::barrier")
+    for row in axes:
+        row[0].set_ylabel("speedup in median ms/batch vs std::barrier")
     axes[0][0].set_ylim(bottom=0.8)
     axes[0][0].yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}×"))
+    fig.supxlabel("batch size ÷ benchmark default (YCSB 1000, TPC-C 500)", color=INK_2,
+                  fontsize=10, y=0.055)
 
     handles = [Line2D([], [], color=c, lw=2, label=l) for _, l, c in BUILDS]
     handles.append(Line2D([], [], color=BASELINE, lw=1.5, ls=(0, (4, 3)), label="std::barrier (baseline)"))
@@ -91,7 +108,7 @@ def main():
     fig.suptitle(args.title, x=0.01, ha="left", color=INK, fontsize=12)
     fig.tight_layout(rect=(0, 0.07, 1, 1))
     for ext in ("svg", "png"):
-        fig.savefig(out.with_suffix(f".{ext}"), dpi=160, facecolor=SURFACE)
+        fig.savefig(out.with_suffix(f".{ext}"), dpi=160, facecolor=SURFACE, bbox_inches="tight")
     print(f"wrote {out}.svg, {out}.png")
 
 
