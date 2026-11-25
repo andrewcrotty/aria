@@ -46,7 +46,9 @@ public:
       no_manager = true;
 #endif
       std::size_t nthreads = context.worker_num + (no_manager ? 0 : 1);
-      barrier = std::make_unique<Barrier>(nthreads);
+      // Workers (then the manager) are pinned after the 2 dispatchers per I/O thread.
+      std::size_t first_cpu = context.cpu_core_id + 2 * context.io_thread_num;
+      barrier = std::make_unique<Barrier>(nthreads, first_cpu);
     }
 #endif
   }
