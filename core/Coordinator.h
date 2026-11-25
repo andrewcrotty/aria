@@ -66,7 +66,9 @@ public:
                                       iDispatchers[i].get());
       oDispatcherThreads.emplace_back(&OutgoingDispatcher::start,
                                       oDispatchers[i].get());
-      if (context.cpu_affinity) {
+      // Single node: the dispatchers return at once, so don't spend cores on
+      // them; the workers are then pinned from cpu_core_id.
+      if (context.cpu_affinity && context.coordinator_num > 1) {
         pin_thread_to_core(iDispatcherThreads[i]);
         pin_thread_to_core(oDispatcherThreads[i]);
       }

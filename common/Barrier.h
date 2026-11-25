@@ -14,7 +14,7 @@ namespace aria {
 class Barrier {
 public:
   // tid t must run on CPU first_cpu + t (Coordinator pins workers to consecutive
-  // cores after the I/O dispatchers); SmcBarrier groups its slots by those CPUs'
+  // cores); SmcBarrier groups its slots by those CPUs'
   // NUMA nodes.
   explicit Barrier(std::size_t nthreads, std::size_t first_cpu = 0)
 #ifdef USE_SMC_BARRIER

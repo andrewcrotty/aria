@@ -32,11 +32,13 @@ BASELINE = "#8a8985"
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 
 
-def ht_level(workers, cores):
-    """Hyperthreading level of a run: aria pins 2 I/O threads and the manager next
-    to the workers, on consecutive CPUs from 0."""
-    pinned = workers + 3
-    return "no HT" if pinned <= cores else f"{round(100 * (pinned - cores) / cores)}% HT"
+def ht_level(workers, cores, offset):
+    """Core use of a run: the workers and the manager are busy on consecutive CPUs
+    offset .. offset + workers, CPU c and c + cores being siblings of core c."""
+    busy = set(range(offset, offset + workers + 1))
+    used = sum(1 for c in range(cores) if c in busy or c + cores in busy)
+    doubled = sum(1 for c in range(cores) if c in busy and c + cores in busy)
+    return f"{used}/{cores} cores" if doubled == 0 else f"{round(100 * doubled / cores)}% HT"
 
 
 def main():
@@ -45,8 +47,12 @@ def main():
     ap.add_argument("-o", "--out")
     ap.add_argument("--title", default="Aria batch time: speedup over std::barrier (higher is better)")
     ap.add_argument("--cores", type=int,
-                    help="physical cores; labels each panel no HT / x%% HT (assumes CPUs "
-                         "0..cores-1 are distinct cores, as on dubliner and manchego)")
+                    help="physical cores; labels each panel with the cores used or the "
+                         "%% of cores running two threads (assumes CPU c and c + cores are "
+                         "siblings, as on dubliner and manchego)")
+    ap.add_argument("--cpu-offset", type=int, default=0,
+                    help="first CPU the workers are pinned to (0 since the pinning fix; "
+                         "2 for runs before it, which left CPUs 0-1 to idle dispatchers)")
     args = ap.parse_args()
     out = Path(args.out) if args.out else Path(args.csv).with_name("speedup_vs_batch")
 
@@ -87,7 +93,7 @@ def main():
                             ms=6, mec=SURFACE, mew=1.2, elinewidth=1, capsize=2.5, zorder=3)
         ax.set_xscale("log")
         ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}×"))
-        ax.set_title(f"{n} worker thread{'' if n == 1 else 's'}" + (f" ({ht_level(n, args.cores)})" if args.cores else ""),
+        ax.set_title(f"{n} worker thread{'' if n == 1 else 's'}" + (f" ({ht_level(n, args.cores, args.cpu_offset)})" if args.cores else ""),
                      loc="left", color=INK, fontsize=11)
         ax.grid(axis="y", color=GRID, lw=0.8)
         for side in ("top", "right"):
