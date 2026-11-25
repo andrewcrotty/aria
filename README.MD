@@ -32,6 +32,14 @@ Aria's phase barriers (`common/Barrier.h`) can use `SmcBarrier` from
 `std::barrier`. `--seed` and `--batches` make runs deterministic and log a database checksum, so
 barrier builds can be checked for identical results and timed on identical work with the scripts below.
 
+**Preliminary result** (laptop, Ryzen 7 7840U, one NUMA node; 5 runs per point on identical work,
+checksums identical across builds): `SmcBarrier` cuts batch time by up to 2.6× over `std::barrier`
+at small batch sizes, where the barrier is a large share of each batch, and is on par at the default
+sizes. Below the default batch size it also matches or beats Aria's original barrier-free signaling,
+clearly so at 12 threads.
+
+![Aria on the laptop: batch-time speedup over std::barrier vs batch size](docs/aria_laptop_batch_sweep.png)
+
 <details>
 <summary>Scripts, flags and dependencies</summary>
 

@@ -28,3 +28,17 @@ cmake/*
 # Submodules
 !.gitmodules
 !external/
+
+# Data, run outputs and plots are never tracked, wherever they are written
+# (build-*/, det-runs/, speed-runs/ are already covered by /* above)...
+*.csv
+*.log
+*.out
+*.png
+*.svg
+*.pdf
+
+# ...except figures deliberately committed under docs/
+!docs/
+!docs/*.png
+!docs/*.svg
