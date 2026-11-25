@@ -39,6 +39,16 @@ public:
     return tbl_vecs[table_id][partition_id];
   }
 
+  // Hash of every table's rows, independent of order (see ITable::checksum).
+  uint64_t checksum() {
+    uint64_t sum = 0;
+    for (auto &tables : tbl_vecs)
+      for (auto *table : tables)
+        sum += mix64(table->checksum() ^
+                     (table->tableID() << 32 | table->partitionID()));
+    return sum;
+  }
+
   ITable *tbl_warehouse(std::size_t partition_id) {
     DCHECK(partition_id < tbl_warehouse_vec.size());
     return tbl_warehouse_vec[partition_id].get();

@@ -49,6 +49,11 @@ DEFINE_bool(bohm_local, false, "locality optimization for Bohm.");
 DEFINE_bool(bohm_single_spin, false, "spin optimization for Bohm.");
 DEFINE_int32(ariaFB_lock_manager, 0,
              "# of lock manager in aria's fallback mode.");
+DEFINE_uint64(seed, 0,
+              "Aria: seed worker i's generator with seed + i (0: from its address)");
+DEFINE_uint64(batches, 0,
+              "Aria: stop after this many batches and log a database checksum "
+              "(0: run for a fixed time)");
 
 #define SETUP_CONTEXT(context)                                                 \
   boost::algorithm::split(context.peers, FLAGS_servers,                        \
@@ -90,6 +95,10 @@ DEFINE_int32(ariaFB_lock_manager, 0,
   context.bohm_local = FLAGS_bohm_local;                                       \
   context.bohm_single_spin = FLAGS_bohm_single_spin;                           \
   context.ariaFB_lock_manager = FLAGS_ariaFB_lock_manager;                     \
+  context.seed = FLAGS_seed;                                                   \
+  context.batches = FLAGS_batches;                                             \
+  CHECK(context.batches == 0 || context.protocol == "Aria")                    \
+      << "--batches is only supported by the Aria protocol.";                  \
   CHECK(context.coordinator_num == 1 || context.bohm_single_spin == false)     \
       << "bohm_single_spin must be used in single-node mode.";                 \
   CHECK((context.mvcc ^ (context.protocol == "Bohm")) == 0)                    \

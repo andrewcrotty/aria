@@ -60,7 +60,9 @@ public:
         partitioner(PartitionerFactory::create_partitioner(
             context.partitioner, coordinator_id, context.coordinator_num)),
         workload(coordinator_id, db, random, *partitioner),
-        random(reinterpret_cast<uint64_t>(this)),
+        // --seed gives every run the same transactions (see Context::seed).
+        random(context.seed ? context.seed + id
+                            : reinterpret_cast<uint64_t>(this)),
         protocol(db, context, *partitioner),
         delay(std::make_unique<SameDelay>(
             coordinator_id, context.coordinator_num, context.delay_time)) {

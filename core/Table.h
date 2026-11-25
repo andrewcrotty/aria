@@ -9,11 +9,20 @@
 #include "common/HashMap.h"
 #include "common/MVCCHashMap.h"
 #include "common/StringPiece.h"
+#include <functional>
 #include <memory>
+#include <string>
 
 #include "core/Context.h"
 
 namespace aria {
+
+// splitmix64 finalizer: spreads one row's hash before rows are summed.
+inline uint64_t mix64(uint64_t x) {
+  x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+  return x ^ (x >> 31);
+}
 
 class ITable {
 public:
@@ -59,6 +68,13 @@ public:
   virtual std::size_t tableID() = 0;
 
   virtual std::size_t partitionID() = 0;
+
+  // Hash of every row's key and value (not its metadata), independent of row
+  // order, for comparing the final state of deterministic runs (--batches).
+  virtual uint64_t checksum() {
+    CHECK(false) << "checksum() is not implemented for this table type.";
+    return 0;
+  }
 };
 
 /* parameter version is not used in Table. */
@@ -160,6 +176,21 @@ public:
   std::size_t tableID() override { return tableID_; }
 
   std::size_t partitionID() override { return partitionID_; }
+
+  uint64_t checksum() override {
+    uint64_t sum = 0;
+    std::string bytes;
+    map_.for_each([&](const KeyType &key,
+                      std::tuple<MetaDataType, ValueType> &row) {
+      // Hash the serialized value, not its bytes in memory: structs have padding.
+      bytes.clear();
+      Encoder enc(bytes);
+      enc << std::get<1>(row);
+      sum += mix64(std::hash<KeyType>{}(key) * 0x9E3779B97F4A7C15ULL ^
+                   std::hash<std::string>{}(bytes));
+    });
+    return sum;
+  }
 
 private:
   HashMap<N, KeyType, std::tuple<MetaDataType, ValueType>> map_;

@@ -34,6 +34,16 @@ public:
     return tbl_vecs[table_id][partition_id];
   }
 
+  // Hash of every table's rows, independent of order (see ITable::checksum).
+  uint64_t checksum() {
+    uint64_t sum = 0;
+    for (auto &tables : tbl_vecs)
+      for (auto *table : tables)
+        sum += mix64(table->checksum() ^
+                     (table->tableID() << 32 | table->partitionID()));
+    return sum;
+  }
+
   template <class InitFunc>
   void initTables(const std::string &name, InitFunc initFunc,
                   std::size_t partitionNum, std::size_t threadsNum,

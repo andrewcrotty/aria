@@ -53,8 +53,13 @@ public:
 #endif
   }
 
+  // --batches: true once that many batches have been started.
+  bool batches_done() const {
+    return context.batches > 0 && epoch.load() >= context.batches;
+  }
+
   bool prepare_local_batch() {
-    if (stopFlag.load()) {
+    if (stopFlag.load() || batches_done()) {
       set_worker_status(ExecutorStatus::EXIT);
       return false;
     }
@@ -93,7 +98,7 @@ public:
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
 
-    while (!stopFlag.load()) {
+    while (!stopFlag.load() && !batches_done()) {
 
       // the coordinator on each machine first moves the aborted transactions
       // from the last batch earlier to the next batch and set remaining

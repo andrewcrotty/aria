@@ -66,6 +66,14 @@ public:
     map([](HashMapType &map) { map.clear(); });
   }
 
+  // Calls f(key, value) for every entry, one locked bucket at a time.
+  template <class F> void for_each(F f) {
+    map([&f](HashMapType &map) {
+      for (auto &kv : map)
+        f(kv.first, kv.second);
+    });
+  }
+
 private:
   template <class ApplyFunc>
   auto &apply_ref(ApplyFunc applyFunc, std::size_t i) {

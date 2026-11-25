@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,11 @@ public:
   bool tcp_quick_ack = false;
 
   bool cpu_affinity = true;
+
+  // Deterministic runs (Aria): seed worker i's generator with seed + i (0: from
+  // its address), and stop after this many batches instead of after a fixed time.
+  uint64_t seed = 0;
+  uint64_t batches = 0;
 
   bool sleep_on_retry = true;
 
