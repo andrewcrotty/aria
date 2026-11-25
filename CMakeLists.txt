@@ -48,13 +48,11 @@ include_directories(${CMAKE_SOURCE_DIR})
 file(GLOB_RECURSE COMMON_SOURCE_FILES common/*.cpp)
 add_library(common STATIC ${COMMON_SOURCE_FILES})
 
-if(APPLE)
-    find_package(glog REQUIRED)
-    find_package(gflags REQUIRED)
-    target_link_libraries(common ${jemalloc_lib} glog::glog gflags)
-else()
-    target_link_libraries(common ${jemalloc_lib} glog gflags)
-endif()
+# Link glog through its CMake target everywhere: glog >= 0.7 refuses to be
+# included without the definitions that target carries.
+find_package(glog REQUIRED)
+find_package(gflags REQUIRED)
+target_link_libraries(common ${jemalloc_lib} glog::glog gflags)
 
 add_executable(bench_tpcc bench_tpcc.cpp)
 target_link_libraries(bench_tpcc common)
