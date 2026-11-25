@@ -24,3 +24,7 @@ cmake/*
 !database/
 !protocol/
 !scripts/
+
+# Submodules
+!.gitmodules
+!external/

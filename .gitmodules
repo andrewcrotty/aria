@@ -1,0 +1,3 @@
+[submodule "external/smc_barrier"]
+	path = external/smc_barrier
+	url = git@github.com:lxbtlr/smc_barrier.git

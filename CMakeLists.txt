@@ -18,9 +18,18 @@ endif()
 if(USE_SMC_BARRIER)
     add_definitions(-DUSE_SMC_BARRIER)
 
-    set(SMC_INCLUDE_DIR "" CACHE PATH "Directory containing smc_barrier.hpp")
-
-    include_directories(${SMC_INCLUDE_DIR})
+    # SmcBarrier comes from the external/smc_barrier submodule and needs a static
+    # AsmJit at the revision its flake pins (barrier_bench's dev shell exports it
+    # as $ASMJIT).
+    set(ASMJIT_ROOT "$ENV{ASMJIT}" CACHE PATH "AsmJit install prefix (include/, lib/libasmjit.a)")
+    if(NOT EXISTS "${ASMJIT_ROOT}/lib/libasmjit.a")
+        message(FATAL_ERROR "USE_SMC_BARRIER needs ASMJIT_ROOT/lib/libasmjit.a (ASMJIT_ROOT='${ASMJIT_ROOT}')")
+    endif()
+    set(SMC_DIR ${CMAKE_SOURCE_DIR}/external/smc_barrier)
+    add_library(smc_barrier STATIC ${SMC_DIR}/src/smc_barrier.cpp)
+    target_include_directories(smc_barrier PUBLIC ${SMC_DIR}/include PRIVATE ${ASMJIT_ROOT}/include)
+    target_compile_definitions(smc_barrier PRIVATE ASMJIT_STATIC)
+    target_link_libraries(smc_barrier PRIVATE ${ASMJIT_ROOT}/lib/libasmjit.a rt)
 endif()
 
 if(NO_MANAGER)
@@ -53,6 +62,9 @@ add_library(common STATIC ${COMMON_SOURCE_FILES})
 find_package(glog REQUIRED)
 find_package(gflags REQUIRED)
 target_link_libraries(common ${jemalloc_lib} glog::glog gflags)
+if(USE_SMC_BARRIER)
+    target_link_libraries(common smc_barrier)
+endif()
 
 add_executable(bench_tpcc bench_tpcc.cpp)
 target_link_libraries(bench_tpcc common)
