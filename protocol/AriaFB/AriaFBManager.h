@@ -4,14 +4,16 @@
 
 #pragma once
 
+#include "common/Barrier.h"
 #include "core/Manager.h"
 #include "core/Partitioner.h"
+#include "glog/logging.h"
 #include "protocol/AriaFB/AriaFB.h"
-#include "protocol/AriaFB/AriaFBExecutor.h"
 #include "protocol/AriaFB/AriaFBHelper.h"
 #include "protocol/AriaFB/AriaFBTransaction.h"
 
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -42,14 +44,57 @@ public:
     storages.resize(context.batch_size);
     transactions.resize(context.batch_size);
     partition_ids.resize(context.batch_size);
+
+#ifdef USE_BARRIER
+    CHECK(context.coordinator_num == 1);
+
+    std::size_t nthreads = context.worker_num;
+#ifndef NO_MANAGER
+    nthreads += 1;
+#endif
+
+    std::size_t first_cpu = context.cpu_core_id + 2 * context.io_thread_num;
+    barrier = std::make_unique<Barrier>(nthreads, first_cpu);
+#endif
+  }
+
+  // --batches: true once that many batches have been started.
+  bool batches_done() const {
+    return context.batches > 0 && epoch.load() >= context.batches;
+  }
+
+  bool prepare_local_batch() {
+    if (stopFlag.load() || batches_done()) {
+      set_worker_status(ExecutorStatus::EXIT);
+      return false;
+    }
+
+    epoch.fetch_add(1);
+    clear_lock_manager_status();
+
+    set_worker_status(ExecutorStatus::AriaFB_READ);
+    return true;
   }
 
   void coordinator_start() override {
+#ifdef USE_BARRIER
+    for (;;) {
+      bool running = prepare_local_batch();
 
+      barrier->wait(id);
+      if (!running)
+        return;
+
+      barrier->wait(id);
+      barrier->wait(id);
+      barrier->wait(id);
+      barrier->wait(id);
+    }
+#else
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
 
-    while (!stopFlag.load()) {
+    while (!stopFlag.load() && !batches_done()) {
 
       // the coordinator on each machine first moves the aborted transactions
       // from the last batch earlier to the next batch and set remaining
@@ -122,6 +167,7 @@ public:
       wait4_ack();
     }
     signal_worker(ExecutorStatus::EXIT);
+#endif
   }
 
   void non_coordinator_start() override {
@@ -295,12 +341,6 @@ public:
     }
   }
 
-  void add_worker(const std::shared_ptr<AriaFBExecutor<WorkloadType>>
-
-                      &w) {
-    workers.push_back(w);
-  }
-
   void clear_lock_manager_status() { lock_manager_status.store(0); }
 
 public:
@@ -308,12 +348,12 @@ public:
   DatabaseType &db;
   std::atomic<uint32_t> epoch;
   std::atomic<uint32_t> lock_manager_status;
-  std::vector<std::shared_ptr<AriaFBExecutor<WorkloadType>>> workers;
   std::unique_ptr<Partitioner> partitioner;
   std::vector<StorageType> storages;
   std::vector<std::unique_ptr<TransactionType>> transactions;
   std::vector<std::size_t> partition_ids;
   std::atomic<uint32_t> total_abort;
   std::vector<int> abort_tids;
+  std::unique_ptr<Barrier> barrier;
 };
 } // namespace aria

@@ -13,9 +13,11 @@
 
 #include "protocol/AriaFB/AriaFB.h"
 #include "protocol/AriaFB/AriaFBHelper.h"
+#include "protocol/AriaFB/AriaFBManager.h"
 #include "protocol/AriaFB/AriaFBMessage.h"
 
 #include <chrono>
+#include <memory>
 #include <thread>
 
 namespace aria {
@@ -50,13 +52,15 @@ public:
                  std::atomic<uint32_t> &worker_status,
                  std::atomic<uint32_t> &total_abort,
                  std::atomic<uint32_t> &n_complete_workers,
-                 std::atomic<uint32_t> &n_started_workers)
+                 std::atomic<uint32_t> &n_started_workers,
+                 std::shared_ptr<AriaFBManager<Workload>> manager)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), partition_ids(partition_ids),
         storages(storages), epoch(epoch),
         lock_manager_status(lock_manager_status), worker_status(worker_status),
         total_abort(total_abort), n_complete_workers(n_complete_workers),
         n_started_workers(n_started_workers),
+        manager(manager),
         partitioner(PartitionerFactory::create_partitioner(
             context.partitioner, coordinator_id, context.coordinator_num)),
         workload(coordinator_id, db, random, *partitioner),
@@ -65,7 +69,7 @@ public:
         lock_manager_id(AriaFBHelper::worker_id_to_lock_manager_id(
             id, n_lock_manager, n_workers)),
         init_transaction(false),
-        random(id), // make sure each worker has a different seed.
+        random(context.seed ? context.seed + id : id), // make sure each worker has a different seed.
         // random(reinterpret_cast<uint64_t >(this)),
         protocol(db, context, *partitioner),
         delay(std::make_unique<SameDelay>(
@@ -82,9 +86,41 @@ public:
   ~AriaFBExecutor() = default;
 
   void start() override {
-
     LOG(INFO) << "AriaFBExecutor " << id << " started. ";
 
+#ifdef USE_BARRIER
+    auto &barrier = *manager->barrier;
+    for (;;) {
+#ifdef NO_MANAGER
+      if (id == 0)
+        manager->prepare_local_batch();
+#endif
+
+      barrier.wait(id);
+      ExecutorStatus status = static_cast<ExecutorStatus>(worker_status.load());
+      if (status == ExecutorStatus::EXIT) {
+        LOG(INFO) << "AriaFBExecutor " << id << " exits. ";
+        return;
+      }
+
+      generate_transactions();
+      read_snapshot();
+      barrier.wait(id);
+
+      commit_transactions();
+      barrier.wait(id);
+
+      prepare_calvin_input();
+      barrier.wait(id);
+
+      if (id < n_lock_manager) {
+        schedule_calvin_transactions();
+      } else {
+        run_calvin_transactions();
+      }
+
+      barrier.wait(id);
+#else
     for (;;) {
 
       ExecutorStatus status;
@@ -164,6 +200,7 @@ public:
       }
       process_request();
       n_complete_workers.fetch_add(1);
+#endif
     }
   }
 
@@ -281,7 +318,7 @@ public:
     }
 
     n_active_coordinators = 0;
-    for (auto i = 0u; i < readSet.size(); i++) {
+    for (auto i = 0u; i < active_coordinators.size(); i++) {
       if (active_coordinators[i])
         n_active_coordinators++;
     }
@@ -894,6 +931,7 @@ private:
   std::atomic<uint32_t> &epoch, &lock_manager_status, &worker_status,
       &total_abort;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  std::shared_ptr<AriaFBManager<Workload>> manager;
   std::unique_ptr<Partitioner> partitioner;
   WorkloadType workload;
   std::size_t n_lock_manager, n_workers;
