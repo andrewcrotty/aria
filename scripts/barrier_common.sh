@@ -11,9 +11,15 @@
 #                 when several machines share one checkout)
 #   RUN_TIMEOUT   seconds before one benchmark run is killed (default 600)
 #   RETRY         1: retry mode (see run_aria; the scripts' -R sets it)
+#   YCSB_KEYS     YCSB keys per partition (default 200000)
+#   ZIPF          YCSB skew factor; set (even to 0) to draw keys from the global
+#                 key space like the paper's skew figure (--global_key_space).
+#                 Unset: aria's default per-partition uniform keys.
 BUILD_PREFIX=${BUILD_PREFIX:-build-det}
 RUN_TIMEOUT=${RUN_TIMEOUT:-600}
 RETRY=${RETRY:-0}
+YCSB_KEYS=${YCSB_KEYS:-200000}
+ZIPF=${ZIPF:-}
 
 BUILDS="std smc nobar"
 declare -A CMAKE_FLAGS=(
@@ -59,7 +65,8 @@ run_aria() {
     # YCSB writes the same value every time (its value generator is fixed-seed),
     # so its final state is just the set of keys ever written: keep enough keys
     # (the default 200000 per partition) that some stay unwritten.
-    args+=(--keys=200000)
+    args+=(--keys="$YCSB_KEYS")
+    [[ -n $ZIPF ]] && args+=(--zipf="$ZIPF" --global_key_space=True)
   else
     args+=(--query=mixed)
   fi
