@@ -10,10 +10,12 @@
 #include "glog/logging.h"
 
 #include "protocol/Pwv/PwvHelper.h"
+#include "protocol/Pwv/PwvManager.h"
 #include "protocol/Pwv/PwvTransaction.h"
 #include "protocol/Pwv/PwvWorkload.h"
 
 #include <chrono>
+#include <memory>
 #include <thread>
 
 namespace aria {
@@ -33,21 +35,41 @@ public:
               std::vector<StorageType> &storages, std::atomic<uint32_t> &epoch,
               std::atomic<uint32_t> &worker_status,
               std::atomic<uint32_t> &n_complete_workers,
-              std::atomic<uint32_t> &n_started_workers)
+              std::atomic<uint32_t> &n_started_workers,
+              std::shared_ptr<PwvManager<Database>> manager)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), storages(storages), epoch(epoch),
         worker_status(worker_status), n_complete_workers(n_complete_workers),
-        n_started_workers(n_started_workers), workload(db, random),
-        init_transaction(false),
-        random(id), // make sure each worker has a different seed.
+        n_started_workers(n_started_workers), manager(manager),
+        workload(db, random), init_transaction(false),
+        random(context.seed ? context.seed + id : id), // make sure each worker has a different seed.
         sleep_random(reinterpret_cast<uint64_t>(this)) {}
 
   ~PwvExecutor() = default;
 
   void start() override {
-
     LOG(INFO) << "PwvExecutor" << id << " started. ";
+#ifdef USE_BARRIER
+    auto &barrier = *manager->barrier;
+    for (;;) {
+#ifdef NO_MANAGER
+      if (id == 0)
+        manager->prepare_local_batch();
+#endif
 
+      barrier.wait(id);
+      ExecutorStatus status = static_cast<ExecutorStatus>(worker_status.load());
+      if (status == ExecutorStatus::EXIT) {
+        LOG(INFO) << "PwvExecutor " << id << " exits. ";
+        return;
+      }
+
+      generate_transactions();
+      barrier.wait(id);
+
+      run_transactions();
+      barrier.wait(id);
+#else
     for (;;) {
 
       ExecutorStatus status;
@@ -77,6 +99,7 @@ public:
              ExecutorStatus::Pwv_Execute) {
         std::this_thread::yield();
       }
+#endif
     }
   }
 
@@ -121,6 +144,7 @@ private:
   std::vector<StorageType> &storages;
   std::atomic<uint32_t> &epoch, &worker_status;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  std::shared_ptr<PwvManager<Database>> manager;
   WorkloadType workload;
   bool init_transaction;
   RandomType random, sleep_random;

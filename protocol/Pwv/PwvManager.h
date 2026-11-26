@@ -4,11 +4,15 @@
 
 #pragma once
 
+#include "common/Barrier.h"
 #include "core/Manager.h"
-#include "protocol/Pwv/PwvExecutor.h"
+#include "glog/logging.h"
 #include "protocol/Pwv/PwvHelper.h"
 #include "protocol/Pwv/PwvTransaction.h"
+#include "protocol/Pwv/PwvWorkload.h"
 
+#include <atomic>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -29,14 +33,54 @@ public:
 
     storages.resize(context.batch_size);
     transactions.resize(context.batch_size);
+
+#ifdef USE_BARRIER
+    CHECK(context.coordinator_num == 1);
+
+    std::size_t nthreads = context.worker_num;
+#ifndef NO_MANAGER
+    nthreads += 1;
+#endif
+
+    std::size_t first_cpu = context.cpu_core_id + 2 * context.io_thread_num;
+    barrier = std::make_unique<Barrier>(nthreads, first_cpu);
+#endif
+  }
+
+  // --batches: true once that many batches have been started.
+  bool batches_done() const {
+    return context.batches > 0 && epoch.load() >= context.batches;
+  }
+
+  bool prepare_local_batch() {
+    if (stopFlag.load() || batches_done()) {
+      set_worker_status(ExecutorStatus::EXIT);
+      return false;
+    }
+
+    epoch.fetch_add(1);
+
+    set_worker_status(ExecutorStatus::Pwv_Analysis);
+    return true;
   }
 
   void coordinator_start() override {
+#ifdef USE_BARRIER
+    for (;;) {
+      bool running = prepare_local_batch();
 
+      barrier->wait(id);
+      if (!running)
+        return;
+
+      barrier->wait(id);
+      barrier->wait(id);
+    }
+#else
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
 
-    while (!stopFlag.load()) {
+    while (!stopFlag.load() && !batches_done()) {
 
       // the coordinator generates a batch of transactions
 
@@ -60,6 +104,7 @@ public:
     }
 
     signal_worker(ExecutorStatus::EXIT);
+#endif
   }
 
 public:
@@ -68,5 +113,6 @@ public:
   std::atomic<uint32_t> epoch;
   std::vector<StorageType> storages;
   std::vector<std::unique_ptr<TransactionType>> transactions;
+  std::unique_ptr<Barrier> barrier;
 };
 } // namespace aria

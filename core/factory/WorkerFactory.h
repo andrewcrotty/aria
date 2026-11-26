@@ -208,11 +208,12 @@ public:
         workers.push_back(std::make_shared<PwvExecutor<Database>>(
             coordinator_id, i, db, context, manager->transactions,
             manager->storages, manager->epoch, manager->worker_status,
-            manager->n_completed_workers, manager->n_started_workers));
+            manager->n_completed_workers, manager->n_started_workers, manager));
       }
 
+ #ifndef NO_MANAGER
       workers.push_back(manager);
-
+#endif
     } else {
       CHECK(false) << "protocol: " << context.protocol << " is not supported.";
     }
