@@ -11,10 +11,12 @@
 
 #include "protocol/Bohm/Bohm.h"
 #include "protocol/Bohm/BohmHelper.h"
+#include "protocol/Bohm/BohmManager.h"
 #include "protocol/Bohm/BohmMessage.h"
 #include "protocol/Bohm/BohmPartitioner.h"
 
 #include <chrono>
+#include <memory>
 #include <thread>
 
 namespace aria {
@@ -39,15 +41,18 @@ public:
                std::vector<StorageType> &storages, std::atomic<uint32_t> &epoch,
                std::atomic<uint32_t> &worker_status,
                std::atomic<uint32_t> &n_complete_workers,
-               std::atomic<uint32_t> &n_started_workers)
+               std::atomic<uint32_t> &n_started_workers,
+               std::shared_ptr<BohmManager<Workload>> manager)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), storages(storages), epoch(epoch),
         worker_status(worker_status), n_complete_workers(n_complete_workers),
         n_started_workers(n_started_workers),
+        manager(manager),
         partitioner(coordinator_id, context.coordinator_num),
         workload(coordinator_id, db, random, partitioner),
         init_transaction(false),
-        random(id), // make sure each worker has a different seed.
+        // --seed gives every run the same transactions (see Context::seed).
+        random(context.seed ? context.seed + id : id),
         sleep_random(reinterpret_cast<uint64_t>(this)),
         protocol(db, partitioner),
         delay(std::make_unique<SameDelay>(
@@ -63,9 +68,34 @@ public:
   ~BohmExecutor() = default;
 
   void start() override {
-
     LOG(INFO) << "BohmExecutor " << id << " started. ";
+#ifdef USE_BARRIER
+    auto &barrier = *manager->barrier;
+    for (;;) {
+#ifdef NO_MANAGER
+      if (id == 0)
+        manager->prepare_local_batch();
+#endif
 
+      barrier.wait(id);
+      ExecutorStatus status = static_cast<ExecutorStatus>(worker_status.load());
+      if (status == ExecutorStatus::EXIT) {
+        LOG(INFO) << "BohmExecutor " << id << " exits. ";
+        return;
+      }
+
+      generate_transactions();
+      barrier.wait(id);
+
+      insert_write_sets();
+      barrier.wait(id);
+
+      run_transactions();
+      barrier.wait(id);
+
+      garbage_collect();
+      barrier.wait(id);
+#else
     for (;;) {
 
       ExecutorStatus status;
@@ -113,6 +143,7 @@ public:
              ExecutorStatus::Bohm_GC) {
         process_request();
       }
+#endif
     }
   }
 
@@ -401,6 +432,7 @@ private:
   std::vector<StorageType> &storages;
   std::atomic<uint32_t> &epoch, &worker_status;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  std::shared_ptr<BohmManager<Workload>> manager;
   BohmPartitioner partitioner;
   WorkloadType workload;
   bool init_transaction;

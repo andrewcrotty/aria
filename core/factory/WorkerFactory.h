@@ -137,10 +137,12 @@ public:
         workers.push_back(std::make_shared<BohmExecutor<WorkloadType>>(
             coordinator_id, i, db, context, manager->transactions,
             manager->storages, manager->epoch, manager->worker_status,
-            manager->n_completed_workers, manager->n_started_workers));
+            manager->n_completed_workers, manager->n_started_workers, manager));
       }
 
+#ifndef NO_MANAGER
       workers.push_back(manager);
+#endif
     } else if (context.protocol == "Aria") {
 
       using TransactionType = aria::AriaTransaction;

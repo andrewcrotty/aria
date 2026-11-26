@@ -4,13 +4,15 @@
 
 #pragma once
 
+#include "common/Barrier.h"
 #include "core/Manager.h"
+#include "glog/logging.h"
 #include "protocol/Bohm/Bohm.h"
-#include "protocol/Bohm/BohmExecutor.h"
 #include "protocol/Bohm/BohmHelper.h"
 #include "protocol/Bohm/BohmPartitioner.h"
 #include "protocol/Bohm/BohmTransaction.h"
 
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -35,14 +37,56 @@ public:
 
     storages.resize(context.batch_size);
     transactions.resize(context.batch_size);
+
+#ifdef USE_BARRIER
+    CHECK(context.coordinator_num == 1);
+
+    std::size_t nthreads = context.worker_num;
+#ifndef NO_MANAGER
+    nthreads += 1;
+#endif
+
+    std::size_t first_cpu = context.cpu_core_id + 2 * context.io_thread_num;
+    barrier = std::make_unique<Barrier>(nthreads, first_cpu);
+#endif
+  }
+
+  // --batches: true once that many batches have been started.
+  bool batches_done() const {
+    return context.batches > 0 && epoch.load() >= context.batches;
+  }
+
+  bool prepare_local_batch() {
+    if (stopFlag.load() || batches_done()) {
+      set_worker_status(ExecutorStatus::EXIT);
+      return false;
+    }
+
+    epoch.fetch_add(1);
+
+    set_worker_status(ExecutorStatus::Bohm_Analysis);
+    return true;
   }
 
   void coordinator_start() override {
+#ifdef USE_BARRIER
+    for (;;) {
+      bool running = prepare_local_batch();
 
+      barrier->wait(id);
+      if (!running)
+        return;
+
+      barrier->wait(id);
+      barrier->wait(id);
+      barrier->wait(id);
+      barrier->wait(id);
+    }
+#else
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
 
-    while (!stopFlag.load()) {
+    while (!stopFlag.load() && !batches_done()) {
 
       // the coordinator on each machine generates
       // a batch of transactions using the same random seed.
@@ -89,6 +133,7 @@ public:
     }
 
     signal_worker(ExecutorStatus::EXIT);
+#endif
   }
 
   void non_coordinator_start() override {
@@ -158,5 +203,6 @@ public:
   BohmPartitioner partitioner;
   std::vector<StorageType> storages;
   std::vector<std::unique_ptr<TransactionType>> transactions;
+  std::unique_ptr<Barrier> barrier;
 };
 } // namespace aria
