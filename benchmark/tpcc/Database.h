@@ -40,12 +40,20 @@ public:
   }
 
   // Hash of every table's rows, independent of order (see ITable::checksum).
+  // Also logs each table's share (summed over its partitions), so a mismatch
+  // can be traced to a table.
   uint64_t checksum() {
     uint64_t sum = 0;
-    for (auto &tables : tbl_vecs)
+    for (auto &tables : tbl_vecs) {
+      uint64_t table_sum = 0;
       for (auto *table : tables)
-        sum += mix64(table->checksum() ^
-                     (table->tableID() << 32 | table->partitionID()));
+        table_sum += mix64(table->checksum() ^
+                           (table->tableID() << 32 | table->partitionID()));
+      if (!tables.empty())
+        LOG(INFO) << "table checksum: " << tables[0]->tableID() << " "
+                  << std::hex << table_sum << std::dec;
+      sum += table_sum;
+    }
     return sum;
   }
 
