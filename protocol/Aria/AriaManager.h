@@ -200,7 +200,8 @@ public:
   }
 
   // Moves the last batch's conflict aborts, in order, to the front of the next
-  // batch (they are retried with the lowest ids), and counts its commits.
+  // batch (they are retried with the lowest ids; only with --retry_aborts, else
+  // none are flagged), and counts its commits.
   void cleanup_batch() {
     std::size_t it = 0;
     for (auto i = 0u; i < transactions.size(); i++) {

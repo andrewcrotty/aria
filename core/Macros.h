@@ -57,6 +57,9 @@ DEFINE_uint64(batches, 0,
 DEFINE_uint64(commits, 0,
               "Aria: stop after the batch in which this many transactions have "
               "committed and log a database checksum (0: run for a fixed time)");
+DEFINE_bool(retry_aborts, false,
+            "Aria: retry conflict aborts at the front of the next batch "
+            "(default: drop them, as the original Aria does)");
 
 #define SETUP_CONTEXT(context)                                                 \
   boost::algorithm::split(context.peers, FLAGS_servers,                        \
@@ -101,6 +104,7 @@ DEFINE_uint64(commits, 0,
   context.seed = FLAGS_seed;                                                   \
   context.batches = FLAGS_batches;                                             \
   context.commits = FLAGS_commits;                                             \
+  context.retry_aborts = FLAGS_retry_aborts;                                   \
   CHECK((context.batches == 0 && context.commits == 0) ||                      \
         context.protocol == "Aria")                                            \
       << "--batches and --commits are only supported by the Aria protocol.";   \

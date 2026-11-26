@@ -14,6 +14,8 @@
 # every job for a host appends to the same results.csv and skips runs already
 # in it, so a killed job can simply be resubmitted. SWEEP_FLAG=-F gives the batch
 # sizes as fractions of each benchmark's default (default -B: absolute sizes).
+# RETRY=1 runs in retry mode (compare_barrier_speed.sh -R): aborts are retried
+# and the work is commits.
 set -euo pipefail
 
 THREADS=${1:?thread counts, e.g. "1 2 4"}
@@ -28,6 +30,8 @@ SWEEP_FLAG=${SWEEP_FLAG:--B}
 OUTDIR=${OUTDIR:-speed-runs/$host}
 
 echo "== $(date) job ${SLURM_JOB_ID:-local} on $host: threads [$THREADS] sizes $SWEEP_FLAG [$SIZES] reps $REPS"
-echo "== ASMJIT=${ASMJIT:-unset} BUILD_PREFIX=$BUILD_PREFIX RUN_TIMEOUT=$RUN_TIMEOUT OUTDIR=$OUTDIR"
-scripts/compare_barrier_speed.sh -t "$THREADS" "$SWEEP_FLAG" "$SIZES" -r "$REPS" -o "$OUTDIR"
+echo "== ASMJIT=${ASMJIT:-unset} BUILD_PREFIX=$BUILD_PREFIX RUN_TIMEOUT=$RUN_TIMEOUT OUTDIR=$OUTDIR RETRY=${RETRY:-0}"
+mode=()
+[[ ${RETRY:-0} == 1 ]] && mode=(-R)
+scripts/compare_barrier_speed.sh -t "$THREADS" "$SWEEP_FLAG" "$SIZES" -r "$REPS" "${mode[@]}" -o "$OUTDIR"
 echo "== $(date) done"

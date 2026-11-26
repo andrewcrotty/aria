@@ -395,7 +395,7 @@ public:
 
       if (transactions[i]->waw) {
         protocol.abort(*transactions[i], messages);
-        transactions[i]->abort_lock = true;
+        transactions[i]->abort_lock = context.retry_aborts;
         n_abort_lock.fetch_add(1);
         continue;
       }
@@ -422,13 +422,13 @@ public:
           } else {
             n_abort_lock.fetch_add(1);
             protocol.abort(*transactions[i], messages);
-            transactions[i]->abort_lock = true;
+            transactions[i]->abort_lock = context.retry_aborts;
           }
         } else {
           if (transactions[i]->raw) {
             n_abort_lock.fetch_add(1);
             protocol.abort(*transactions[i], messages);
-            transactions[i]->abort_lock = true;
+            transactions[i]->abort_lock = context.retry_aborts;
           } else {
             protocol.commit(*transactions[i], messages);
             n_commit.fetch_add(1);

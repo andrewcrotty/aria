@@ -2,7 +2,7 @@
 # Times each barrier build of Aria (std, smc, nobar: see barrier_common.sh) on
 # identical work.
 #
-# With --seed and --commits every build runs exactly the same transactions (the
+# With --seed and --batches every build runs exactly the same transactions (the
 # checksums prove it), so the difference in elapsed time is the barrier plus
 # scheduling noise. Each point is run REPS times, rotating the build order every
 # repetition so no build always goes first, and summarized as the median, min
@@ -11,15 +11,17 @@
 #
 # -B sweeps the batch size (transactions per batch, both benchmarks; default:
 # aria's 1000 for YCSB, 500 for TPC-C). Smaller batches leave less work between
-# barriers, so the barrier is a larger share of each batch. Every run does the
-# same total work: it stops after the batch in which -y / -c transactions have
-# committed (conflict aborts are retried, so aborts add batches, not lost work),
-# and ms/batch divides by the batches it took.
+# barriers, so the barrier is a larger share of each batch. Every run attempts
+# the same number of transactions (-y / -c), i.e. batches = transactions / size;
+# conflict aborts are dropped (original Aria). With -R (retry mode) aborts are
+# retried and every run commits -y / -c transactions instead: it stops after the
+# batch in which that many have committed. ms/batch divides by the logged batch
+# count either way.
 # -F gives the sizes as fractions of each benchmark's default instead (e.g.
 # 0.01 = 10 for YCSB, 5 for TPC-C), so both benchmarks sweep the same points.
 #
 # Usage: scripts/compare_barrier_speed.sh [-t "1 2 4 8"] [-B "10 100 1000" | -F "0.01 0.1 1"]
-#                                         [-r REPS] [-y YCSB_TXNS] [-c TPCC_TXNS] [-s SEED] [-o OUTDIR]
+#                                         [-r REPS] [-y YCSB_TXNS] [-c TPCC_TXNS] [-R] [-s SEED] [-o OUTDIR]
 # Run from the repo root (inside barrier_bench's dev shell for the dependencies).
 # Every run goes to OUTDIR/results.csv. Rerunning with the same OUTDIR resumes:
 # runs already in results.csv are skipped (so use the same -y/-c/-s), and the
@@ -36,7 +38,7 @@ TPCC_TXNS=1000000
 SEED=42
 OUT=speed-runs
 
-while getopts "t:B:F:r:y:c:s:o:" opt; do
+while getopts "t:B:F:r:y:c:Rs:o:" opt; do
   case $opt in
     t) THREADS=$OPTARG ;;
     B) SIZES=$OPTARG ;;
@@ -44,6 +46,7 @@ while getopts "t:B:F:r:y:c:s:o:" opt; do
     r) REPS=$OPTARG ;;
     y) YCSB_TXNS=$OPTARG ;;
     c) TPCC_TXNS=$OPTARG ;;
+    R) RETRY=1 ;;
     s) SEED=$OPTARG ;;
     o) OUT=$OPTARG ;;
     *) sed -n '2,25p' "$0"; exit 2 ;;
@@ -88,13 +91,15 @@ for bench in ycsb tpcc; do
   txns=$YCSB_TXNS
   [[ $bench == tpcc ]] && txns=$TPCC_TXNS
   for size in $(sizes_for $bench); do
+    work=$((txns / size))
+    (( RETRY )) && work=$txns
     for n in $THREADS; do
       for ((rep = 1; rep <= REPS; rep++)); do
         for ((k = 0; k < ${#builds[@]}; k++)); do
           b=${builds[(k + rep) % ${#builds[@]}]}
           done_run "$bench" "$size" "$n" "$b" "$rep" && continue
           log="$OUT/${bench}_B${size}_${b}_t${n}_r${rep}.log"
-          if ! run_aria "$b" "$bench" "$n" "$SEED" "$txns" "$log" "$size"; then
+          if ! run_aria "$b" "$bench" "$n" "$SEED" "$work" "$log" "$size"; then
             echo "run failed: $log"
             fail=1
             continue

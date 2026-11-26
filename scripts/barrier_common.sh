@@ -10,8 +10,10 @@
 #   BUILD_PREFIX  build directory prefix (default build-det; use a per-host prefix
 #                 when several machines share one checkout)
 #   RUN_TIMEOUT   seconds before one benchmark run is killed (default 600)
+#   RETRY         1: retry mode (see run_aria; the scripts' -R sets it)
 BUILD_PREFIX=${BUILD_PREFIX:-build-det}
 RUN_TIMEOUT=${RUN_TIMEOUT:-600}
+RETRY=${RETRY:-0}
 
 BUILDS="std smc nobar"
 declare -A CMAKE_FLAGS=(
@@ -37,16 +39,22 @@ build_all() {
 # Default transactions per batch (aria's defaults).
 declare -A DEFAULT_BATCH_SIZE=([ycsb]=1000 [tpcc]=500)
 
-# run_aria BUILD BENCH THREADS SEED COMMITS LOG [BATCH_SIZE]: one deterministic
-# run that stops after the batch in which COMMITS transactions have committed
-# (conflict aborts are retried in the next batch, so the work is commits, not
-# attempts); returns its exit status. One partition per worker.
+# run_aria BUILD BENCH THREADS SEED WORK LOG [BATCH_SIZE]: one deterministic run;
+# returns its exit status. One partition per worker. By default WORK is a batch
+# count (--batches; conflict aborts are dropped, as in the original Aria, so the
+# work is attempts). With RETRY=1 it is a commit target: conflict aborts are
+# retried in the next batch and the run stops after the batch in which WORK
+# transactions have committed (--retry_aborts --commits).
 run_aria() {
-  local build=$1 bench=$2 n=$3 seed=$4 commits=$5 log=$6
+  local build=$1 bench=$2 n=$3 seed=$4 work=$5 log=$6
   local size=${7:-${DEFAULT_BATCH_SIZE[$bench]}}
   local args=(--logtostderr=1 --id=0 --servers=127.0.0.1:10010 --protocol=Aria
-              --threads="$n" --partition_num="$n" --seed="$seed" --commits="$commits"
-              --batch_size="$size")
+              --threads="$n" --partition_num="$n" --seed="$seed" --batch_size="$size")
+  if (( RETRY )); then
+    args+=(--retry_aborts --commits="$work")
+  else
+    args+=(--batches="$work")
+  fi
   if [[ $bench == ycsb ]]; then
     # YCSB writes the same value every time (its value generator is fixed-seed),
     # so its final state is just the set of keys ever written: keep enough keys

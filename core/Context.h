@@ -56,6 +56,9 @@ public:
   uint64_t seed = 0;
   uint64_t batches = 0;
   uint64_t commits = 0;
+  // Aria: retry conflict aborts at the front of the next batch (off: they are
+  // dropped, as in the original Aria).
+  bool retry_aborts = false;
 
   bool sleep_on_retry = true;
 

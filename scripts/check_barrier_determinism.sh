@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Checks that every barrier build of Aria computes the same thing.
 #
-# Aria is deterministic: with the same transactions (--seed), the same commit
-# target (--commits) and the same worker count, the final database must be
+# Aria is deterministic: with the same transactions (--seed), the same number of
+# batches (--batches; with -R, the same commit target) and the same worker
+# count, the final database must be
 # identical whatever the barrier. This builds Aria three ways (std, smc, nobar:
 # see barrier_common.sh), runs YCSB and TPC-C on each at several thread counts,
 # and compares the logged
@@ -10,25 +11,32 @@
 # different seed changes the checksum, so a checksum that ignores the data
 # cannot pass.
 #
-# Usage: scripts/check_barrier_determinism.sh [-t "1 2 4 8"] [-C COMMITS] [-s SEED] [-o OUTDIR]
+# Usage: scripts/check_barrier_determinism.sh [-t "1 2 4 8"] [-b BATCHES] [-R [-C COMMITS]]
+#                                             [-s SEED] [-o OUTDIR]
+# -R: retry mode (barrier_common.sh's run_aria), stopping after COMMITS commits.
 # Run from the repo root (inside barrier_bench's dev shell for the dependencies).
 set -euo pipefail
 source "$(dirname "$0")/barrier_common.sh"
 
 THREADS="1 2 4 8"
+BATCHES=200
 COMMITS=100000
 SEED=42
 OUT=det-runs
 
-while getopts "t:C:s:o:" opt; do
+while getopts "t:b:RC:s:o:" opt; do
   case $opt in
     t) THREADS=$OPTARG ;;
+    b) BATCHES=$OPTARG ;;
+    R) RETRY=1 ;;
     C) COMMITS=$OPTARG ;;
     s) SEED=$OPTARG ;;
     o) OUT=$OPTARG ;;
     *) sed -n '2,20p' "$0"; exit 2 ;;
   esac
 done
+WORK=$BATCHES
+(( RETRY )) && WORK=$COMMITS
 
 mkdir -p "$OUT"
 build_all "$OUT"
@@ -36,7 +44,7 @@ build_all "$OUT"
 # run BUILD BENCH THREADS SEED -> "commit abort checksum" (and a log in $OUT)
 run() {
   local log="$OUT/${2}_${1}_t${3}_s${4}.log"
-  if ! run_aria "$1" "$2" "$3" "$4" "$COMMITS" "$log"; then
+  if ! run_aria "$1" "$2" "$3" "$4" "$WORK" "$log"; then
     echo "FAILED-RUN - -"
     return
   fi
