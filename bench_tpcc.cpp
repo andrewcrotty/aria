@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
   aria::Coordinator c(FLAGS_id, db, context);
   c.connectToPeers();
   c.start();
-  if (context.batches > 0) {
+  if (context.batches > 0 || context.commits > 0) {
     LOG(INFO) << "db checksum: " << std::hex << db.checksum();
   }
   return 0;

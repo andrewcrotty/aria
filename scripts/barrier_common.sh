@@ -37,13 +37,15 @@ build_all() {
 # Default transactions per batch (aria's defaults).
 declare -A DEFAULT_BATCH_SIZE=([ycsb]=1000 [tpcc]=500)
 
-# run_aria BUILD BENCH THREADS SEED BATCHES LOG [BATCH_SIZE]: one deterministic
-# run; returns its exit status. One partition per worker.
+# run_aria BUILD BENCH THREADS SEED COMMITS LOG [BATCH_SIZE]: one deterministic
+# run that stops after the batch in which COMMITS transactions have committed
+# (conflict aborts are retried in the next batch, so the work is commits, not
+# attempts); returns its exit status. One partition per worker.
 run_aria() {
-  local build=$1 bench=$2 n=$3 seed=$4 batches=$5 log=$6
+  local build=$1 bench=$2 n=$3 seed=$4 commits=$5 log=$6
   local size=${7:-${DEFAULT_BATCH_SIZE[$bench]}}
   local args=(--logtostderr=1 --id=0 --servers=127.0.0.1:10010 --protocol=Aria
-              --threads="$n" --partition_num="$n" --seed="$seed" --batches="$batches"
+              --threads="$n" --partition_num="$n" --seed="$seed" --commits="$commits"
               --batch_size="$size")
   if [[ $bench == ycsb ]]; then
     # YCSB writes the same value every time (its value generator is fixed-seed),
@@ -62,6 +64,13 @@ log_totals() {
   totals=$(sed -n 's/.*batches: [0-9]* total commit: \([0-9]*\) total abort: \([0-9]*\).*/\1 \2/p' "$1")
   sum=$(sed -n 's/.*db checksum: \([0-9a-f]*\).*/\1/p' "$1")
   echo "${totals:-? ?} ${sum:-?}"
+}
+
+# log_batches LOG -> batches the run took ("?" where missing)
+log_batches() {
+  local b
+  b=$(sed -n 's/.*batches: \([0-9]*\) total commit:.*/\1/p' "$1")
+  echo "${b:-?}"
 }
 
 # log_elapsed LOG -> elapsed seconds of the run ("?" where missing)

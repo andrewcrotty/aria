@@ -51,9 +51,11 @@ public:
   bool cpu_affinity = true;
 
   // Deterministic runs (Aria): seed worker i's generator with seed + i (0: from
-  // its address), and stop after this many batches instead of after a fixed time.
+  // its address), and stop after this many batches, or after the batch in which
+  // this many transactions have committed, instead of after a fixed time.
   uint64_t seed = 0;
   uint64_t batches = 0;
+  uint64_t commits = 0;
 
   bool sleep_on_retry = true;
 

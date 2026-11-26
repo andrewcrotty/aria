@@ -54,6 +54,9 @@ DEFINE_uint64(seed, 0,
 DEFINE_uint64(batches, 0,
               "Aria: stop after this many batches and log a database checksum "
               "(0: run for a fixed time)");
+DEFINE_uint64(commits, 0,
+              "Aria: stop after the batch in which this many transactions have "
+              "committed and log a database checksum (0: run for a fixed time)");
 
 #define SETUP_CONTEXT(context)                                                 \
   boost::algorithm::split(context.peers, FLAGS_servers,                        \
@@ -97,8 +100,10 @@ DEFINE_uint64(batches, 0,
   context.ariaFB_lock_manager = FLAGS_ariaFB_lock_manager;                     \
   context.seed = FLAGS_seed;                                                   \
   context.batches = FLAGS_batches;                                             \
-  CHECK(context.batches == 0 || context.protocol == "Aria")                    \
-      << "--batches is only supported by the Aria protocol.";                  \
+  context.commits = FLAGS_commits;                                             \
+  CHECK((context.batches == 0 && context.commits == 0) ||                      \
+        context.protocol == "Aria")                                            \
+      << "--batches and --commits are only supported by the Aria protocol.";   \
   CHECK(context.coordinator_num == 1 || context.bohm_single_spin == false)     \
       << "bohm_single_spin must be used in single-node mode.";                 \
   CHECK((context.mvcc ^ (context.protocol == "Bohm")) == 0)                    \

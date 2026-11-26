@@ -177,8 +177,8 @@ public:
 
       if (transactions[i] == nullptr || i >= n_abort) {
         auto partition_id = get_partition_id();
-        transactions[i] =
-            workload.next_transaction(context, partition_id, storages[i]);
+        transactions[i] = workload.next_transaction(
+            context, partition_id, storages[manager->storage_of[i]]);
       } else {
         transactions[i]->reset();
       }
@@ -395,6 +395,7 @@ public:
 
       if (transactions[i]->waw) {
         protocol.abort(*transactions[i], messages);
+        transactions[i]->abort_lock = true;
         n_abort_lock.fetch_add(1);
         continue;
       }
@@ -421,11 +422,13 @@ public:
           } else {
             n_abort_lock.fetch_add(1);
             protocol.abort(*transactions[i], messages);
+            transactions[i]->abort_lock = true;
           }
         } else {
           if (transactions[i]->raw) {
             n_abort_lock.fetch_add(1);
             protocol.abort(*transactions[i], messages);
+            transactions[i]->abort_lock = true;
           } else {
             protocol.commit(*transactions[i], messages);
             n_commit.fetch_add(1);

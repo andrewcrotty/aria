@@ -2,7 +2,7 @@
 # Times each barrier build of Aria (std, smc, nobar: see barrier_common.sh) on
 # identical work.
 #
-# With --seed and --batches every build runs exactly the same transactions (the
+# With --seed and --commits every build runs exactly the same transactions (the
 # checksums prove it), so the difference in elapsed time is the barrier plus
 # scheduling noise. Each point is run REPS times, rotating the build order every
 # repetition so no build always goes first, and summarized as the median, min
@@ -12,7 +12,9 @@
 # -B sweeps the batch size (transactions per batch, both benchmarks; default:
 # aria's 1000 for YCSB, 500 for TPC-C). Smaller batches leave less work between
 # barriers, so the barrier is a larger share of each batch. Every run does the
-# same total work (-y / -c transactions), i.e. batches = transactions / size.
+# same total work: it stops after the batch in which -y / -c transactions have
+# committed (conflict aborts are retried, so aborts add batches, not lost work),
+# and ms/batch divides by the batches it took.
 # -F gives the sizes as fractions of each benchmark's default instead (e.g.
 # 0.01 = 10 for YCSB, 5 for TPC-C), so both benchmarks sweep the same points.
 #
@@ -67,7 +69,7 @@ mkdir -p "$OUT"
 build_all "$OUT"
 
 CSV="$OUT/results.csv"
-HEADER="bench,batch_size,threads,build,rep,elapsed_s,ms_per_batch,commit,abort,checksum"
+HEADER="bench,batch_size,threads,build,rep,elapsed_s,ms_per_batch,commit,abort,checksum,batches"
 if [[ -s $CSV ]]; then
   if [[ $(head -1 "$CSV") != "$HEADER" ]]; then
     echo "FAIL: $CSV exists with a different header"
@@ -86,22 +88,22 @@ for bench in ycsb tpcc; do
   txns=$YCSB_TXNS
   [[ $bench == tpcc ]] && txns=$TPCC_TXNS
   for size in $(sizes_for $bench); do
-    batches=$((txns / size))
     for n in $THREADS; do
       for ((rep = 1; rep <= REPS; rep++)); do
         for ((k = 0; k < ${#builds[@]}; k++)); do
           b=${builds[(k + rep) % ${#builds[@]}]}
           done_run "$bench" "$size" "$n" "$b" "$rep" && continue
           log="$OUT/${bench}_B${size}_${b}_t${n}_r${rep}.log"
-          if ! run_aria "$b" "$bench" "$n" "$SEED" "$batches" "$log" "$size"; then
+          if ! run_aria "$b" "$bench" "$n" "$SEED" "$txns" "$log" "$size"; then
             echo "run failed: $log"
             fail=1
             continue
           fi
           e=$(log_elapsed "$log")
+          batches=$(log_batches "$log")
           read -r commit abort sum <<< "$(log_totals "$log")"
           ms=$(awk -v e="$e" -v b="$batches" 'BEGIN { printf "%.4f", 1e3 * e / b }')
-          echo "$bench,$size,$n,$b,$rep,$e,$ms,$commit,$abort,$sum" >> "$CSV"
+          echo "$bench,$size,$n,$b,$rep,$e,$ms,$commit,$abort,$sum,$batches" >> "$CSV"
           printf '  %-5s B=%-5s t=%-3s %-6s rep %d: %8s ms/batch\n' \
             "$bench" "$size" "$n" "$b" "$rep" "$ms"
         done

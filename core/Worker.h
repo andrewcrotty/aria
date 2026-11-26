@@ -31,6 +31,9 @@ public:
 
   virtual void onExit() {}
 
+  // Batches run (batch protocols' managers; 0 for everyone else).
+  virtual uint64_t batches_run() const { return 0; }
+
   virtual void push_message(Message *message) = 0;
 
   virtual Message *pop_message() = 0;
