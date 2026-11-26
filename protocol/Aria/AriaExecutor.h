@@ -77,38 +77,31 @@ public:
 
   ~AriaExecutor() = default;
 
-  void local_barrier_start() {
-    auto &barrier = *manager->barrier;
-    const bool prepare_batch = manager->no_manager && id == 0;
+  void start() override {
+    LOG(INFO) << "AriaExecutor " << id << " started. ";
 
+#ifdef USE_BARRIER
+    auto &barrier = *manager->barrier;
     for (;;) {
-      if (prepare_batch)
+#ifdef NO_MANAGER
+      if (id == 0)
         manager->prepare_local_batch();
+#endif
 
       barrier.wait(id);
-
-      if (static_cast<ExecutorStatus>(worker_status.load()) == ExecutorStatus::EXIT)
+      ExecutorStatus status = static_cast<ExecutorStatus>(worker_status.load());
+      if (status == ExecutorStatus::EXIT) {
+        LOG(INFO) << "AriaExecutor " << id << " exits. ";
         return;
+      }
 
       read_snapshot();
       barrier.wait(id);
+
       commit_transactions();
       barrier.wait(id);
-    }
-  }
-
-  void start() override {
-
-    LOG(INFO) << "AriaExecutor " << id << " started. ";
-
-    if (manager->barrier) {
-      local_barrier_start();
-      LOG(INFO) << "AriaExecutor " << id << " exits. ";
-      return;
-    }
-
+#else
     for (;;) {
-
       ExecutorStatus status;
       do {
         status = static_cast<ExecutorStatus>(worker_status.load());
@@ -145,6 +138,7 @@ public:
       }
       process_request();
       n_complete_workers.fetch_add(1);
+#endif
     }
   }
 

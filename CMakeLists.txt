@@ -7,23 +7,27 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -Wall -Wno-long-long -Wno-unuse
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(USE_BARRIER "Use barriers for Aria" ON)
-option(USE_SMC_BARRIER "Use SmcBarrier" OFF)
-option(NO_MANAGER "Use worker 0 as manager" OFF)
+#baseline is all OFF
+option(USE_BARRIER "Use barriers for Aria" OFF)
+option(SMC_BARRIER "Swap SmcBarrier for std::barrier" OFF)
+option(NO_MANAGER "Worker 0 is the manager" OFF)
 
 if(USE_BARRIER)
     add_definitions(-DUSE_BARRIER)
 endif()
 
-if(USE_SMC_BARRIER)
-    add_definitions(-DUSE_SMC_BARRIER)
+if(SMC_BARRIER)
+    if(NOT USE_BARRIER)
+        message(FATAL_ERROR "SMC_BARRIER requires USE_BARRIER")
+    endif()
+    add_definitions(-DSMC_BARRIER)
 
     # SmcBarrier comes from the external/smc_barrier submodule and needs a static
     # AsmJit at the revision its flake pins (barrier_bench's dev shell exports it
     # as $ASMJIT).
     set(ASMJIT_ROOT "$ENV{ASMJIT}" CACHE PATH "AsmJit install prefix (include/, lib/libasmjit.a)")
     if(NOT EXISTS "${ASMJIT_ROOT}/lib/libasmjit.a")
-        message(FATAL_ERROR "USE_SMC_BARRIER needs ASMJIT_ROOT/lib/libasmjit.a (ASMJIT_ROOT='${ASMJIT_ROOT}')")
+        message(FATAL_ERROR "SMC_BARRIER needs ASMJIT_ROOT/lib/libasmjit.a (ASMJIT_ROOT='${ASMJIT_ROOT}')")
     endif()
     set(SMC_DIR ${CMAKE_SOURCE_DIR}/external/smc_barrier)
     add_library(smc_barrier STATIC ${SMC_DIR}/src/smc_barrier.cpp)
@@ -33,6 +37,9 @@ if(USE_SMC_BARRIER)
 endif()
 
 if(NO_MANAGER)
+    if(NOT USE_BARRIER)
+        message(FATAL_ERROR "NO_MANAGER requires USE_BARRIER")
+    endif()
     add_definitions(-DNO_MANAGER)
 endif()
 
@@ -62,7 +69,7 @@ add_library(common STATIC ${COMMON_SOURCE_FILES})
 find_package(glog REQUIRED)
 find_package(gflags REQUIRED)
 target_link_libraries(common ${jemalloc_lib} glog::glog gflags)
-if(USE_SMC_BARRIER)
+if(SMC_BARRIER)
     target_link_libraries(common smc_barrier)
 endif()
 

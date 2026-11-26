@@ -158,8 +158,9 @@ public:
             manager->n_started_workers, manager));
       }
 
-      if (!manager->no_manager)
-        workers.push_back(manager);
+#ifndef NO_MANAGER
+      workers.push_back(manager);
+#endif
     } else if (context.protocol == "AriaFB") {
 
       using TransactionType = aria::AriaFBTransaction;

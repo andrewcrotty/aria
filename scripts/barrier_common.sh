@@ -3,14 +3,14 @@
 # The three barrier builds of Aria, each in build-det-<name>:
 #
 #   std    USE_BARRIER=ON  (std::barrier)
-#   smc    USE_BARRIER=ON  USE_SMC_BARRIER=ON  (SmcBarrier; needs ASMJIT_ROOT or $ASMJIT)
+#   smc    USE_BARRIER=ON  SMC_BARRIER=ON  (SmcBarrier; needs ASMJIT_ROOT or $ASMJIT)
 #   nobar  USE_BARRIER=OFF (Aria's original signaling, no barrier at all)
 
 BUILDS="std smc nobar"
 declare -A CMAKE_FLAGS=(
-  [std]="-DUSE_BARRIER=ON -DUSE_SMC_BARRIER=OFF"
-  [smc]="-DUSE_BARRIER=ON -DUSE_SMC_BARRIER=ON"
-  [nobar]="-DUSE_BARRIER=OFF -DUSE_SMC_BARRIER=OFF"
+  [std]="-DUSE_BARRIER=ON -DSMC_BARRIER=OFF"
+  [smc]="-DUSE_BARRIER=ON -DSMC_BARRIER=ON"
+  [nobar]="-DUSE_BARRIER=OFF -DSMC_BARRIER=OFF"
 )
 
 # build_all LOGDIR: configure and build every build, exit on failure.

@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-#ifdef USE_SMC_BARRIER
+#ifdef SMC_BARRIER
 #include "smc_barrier.hpp"
 #include <vector>
 #else
@@ -17,7 +17,7 @@ public:
   // cores after the I/O dispatchers); SmcBarrier groups its slots by those CPUs'
   // NUMA nodes.
   explicit Barrier(std::size_t nthreads, std::size_t first_cpu = 0)
-#ifdef USE_SMC_BARRIER
+#ifdef SMC_BARRIER
       : barrier(static_cast<int>(nthreads), SmcBarrier::kNumaPage,
                 nodes(nthreads, first_cpu).data()) {}
 #else
@@ -27,7 +27,7 @@ public:
 #endif
 
   inline void wait(std::size_t tid) {
-#ifdef USE_SMC_BARRIER
+#ifdef SMC_BARRIER
     barrier.wait(tid);
 #else
     (void)tid;
@@ -36,7 +36,7 @@ public:
   }
 
 private:
-#ifdef USE_SMC_BARRIER
+#ifdef SMC_BARRIER
   // NUMA node of CPU first_cpu + t, for each tid t.
   static std::vector<int> nodes(std::size_t n, std::size_t first_cpu) {
     auto all = SmcBarrier::numa_groups(static_cast<int>(first_cpu + n));

@@ -28,7 +28,7 @@ git clone https://github.com/luyi0619/aria.git
 # Additions in this fork
 
 Aria's phase barriers (`common/Barrier.h`) can use `SmcBarrier` from
-[smc_barrier](https://github.com/lxbtlr/smc_barrier) (`-DUSE_SMC_BARRIER=ON`) instead of
+[smc_barrier](https://github.com/lxbtlr/smc_barrier) (`-DSMC_BARRIER=ON`) instead of
 `std::barrier`. `--seed` and `--batches` make runs deterministic and log a database checksum, so
 barrier builds can be checked for identical results and timed on identical work with the scripts below.
 
@@ -52,7 +52,7 @@ git clone --recursive https://github.com/andrewcrotty/aria.git
 **CMake options**
 
 - `-DUSE_BARRIER=ON` (default): phase barriers instead of Aria's original signaling.
-- `-DUSE_SMC_BARRIER=ON`: use `SmcBarrier`, with slots grouped by the NUMA nodes of the CPUs the
+- `-DSMC_BARRIER=ON`: use `SmcBarrier`, with slots grouped by the NUMA nodes of the CPUs the
   workers are pinned to. Needs `-DASMJIT_ROOT=<prefix>` (defaults to `$ASMJIT`).
 
 **Run flags (Aria protocol only)**
@@ -79,7 +79,7 @@ git clone --recursive https://github.com/andrewcrotty/aria.git
 - gflags and glog are found through their CMake packages (`find_package`), which glog >= 0.7
   requires: install `libgflags-dev` along with `libgoogle-glog-dev`. Tested with glog 0.7 and gflags
   2.3 from nixpkgs; older Ubuntu packages are untested.
-- `-DUSE_SMC_BARRIER=ON` needs a static AsmJit at revision `677a10b` (see smc_barrier's README).
+- `-DSMC_BARRIER=ON` needs a static AsmJit at revision `677a10b` (see smc_barrier's README).
 - The scripts need bash 4+, `timeout` (coreutils) and `awk`.
 
 </details>

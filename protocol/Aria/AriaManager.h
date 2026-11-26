@@ -7,6 +7,7 @@
 #include "common/Barrier.h"
 #include "core/Manager.h"
 #include "core/Partitioner.h"
+#include "glog/logging.h"
 #include "protocol/Aria/Aria.h"
 #include "protocol/Aria/AriaHelper.h"
 #include "protocol/Aria/AriaTransaction.h"
@@ -41,15 +42,15 @@ public:
     transactions.resize(context.batch_size);
 
 #ifdef USE_BARRIER
-    if (context.coordinator_num == 1) {
-#ifdef NO_MANAGER
-      no_manager = true;
+    CHECK(context.coordinator_num == 1);
+
+    std::size_t nthreads = context.worker_num;
+#ifndef NO_MANAGER
+    nthreads += 1;
 #endif
-      std::size_t nthreads = context.worker_num + (no_manager ? 0 : 1);
-      // Workers (then the manager) are pinned after the 2 dispatchers per I/O thread.
-      std::size_t first_cpu = context.cpu_core_id + 2 * context.io_thread_num;
-      barrier = std::make_unique<Barrier>(nthreads, first_cpu);
-    }
+
+    std::size_t first_cpu = context.cpu_core_id + 2 * context.io_thread_num;
+    barrier = std::make_unique<Barrier>(nthreads, first_cpu);
 #endif
   }
 
@@ -71,30 +72,19 @@ public:
     return true;
   }
 
-  void local_barrier_start() {
+  void coordinator_start() override {
+#ifdef USE_BARRIER
     for (;;) {
       bool running = prepare_local_batch();
 
-      // Wait for batch preparation.
       barrier->wait(id);
-
       if (!running)
         return;
 
-      // Wait for snapshot reads and reservations.
       barrier->wait(id);
-
-      // Wait for commits.
       barrier->wait(id);
     }
-  }
-
-  void coordinator_start() override {
-    if (barrier) {
-      local_barrier_start();
-      return;
-    }
-
+#else
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
 
@@ -138,6 +128,7 @@ public:
     }
 
     signal_worker(ExecutorStatus::EXIT);
+#endif
   }
 
   void non_coordinator_start() override {
@@ -210,6 +201,5 @@ public:
   std::vector<std::unique_ptr<TransactionType>> transactions;
   std::atomic<uint32_t> total_abort;
   std::unique_ptr<Barrier> barrier;
-  bool no_manager = false;
 };
 } // namespace aria
