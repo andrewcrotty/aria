@@ -11,10 +11,12 @@
 
 #include "protocol/Calvin/Calvin.h"
 #include "protocol/Calvin/CalvinHelper.h"
+#include "protocol/Calvin/CalvinManager.h"
 #include "protocol/Calvin/CalvinMessage.h"
 #include "protocol/Calvin/CalvinPartitioner.h"
 
 #include <chrono>
+#include <memory>
 #include <thread>
 
 namespace aria {
@@ -39,12 +41,14 @@ public:
                  std::atomic<uint32_t> &lock_manager_status,
                  std::atomic<uint32_t> &worker_status,
                  std::atomic<uint32_t> &n_complete_workers,
-                 std::atomic<uint32_t> &n_started_workers)
+                 std::atomic<uint32_t> &n_started_workers,
+                 std::shared_ptr<CalvinManager<Workload>> manager)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), storages(storages),
         lock_manager_status(lock_manager_status), worker_status(worker_status),
         n_complete_workers(n_complete_workers),
         n_started_workers(n_started_workers),
+        manager(manager),
         partitioner(coordinator_id, context.coordinator_num,
                     CalvinHelper::string_to_vint(context.replica_group)),
         workload(coordinator_id, db, random, partitioner),
@@ -55,7 +59,7 @@ public:
         lock_manager_id(CalvinHelper::worker_id_to_lock_manager_id(
             id, n_lock_manager, n_workers)),
         init_transaction(false),
-        random(id), // make sure each worker has a different seed.
+        random(context.seed ? context.seed + id : id), // make sure each worker has a different seed.
         protocol(db, partitioner),
         delay(std::make_unique<SameDelay>(
             coordinator_id, context.coordinator_num, context.delay_time)) {
@@ -74,6 +78,32 @@ public:
   void start() override {
     LOG(INFO) << "CalvinExecutor " << id << " started. ";
 
+#ifdef USE_BARRIER
+  auto &barrier = *manager->barrier;
+  for (;;) {
+#ifdef NO_MANAGER
+    if (id == 0)
+      manager->prepare_local_batch();
+#endif
+
+    barrier.wait(id);
+    ExecutorStatus status = static_cast<ExecutorStatus>(worker_status.load());
+    if (status == ExecutorStatus::EXIT) {
+      LOG(INFO) << "CalvinExecutor " << id << " exits. ";
+      return;
+    }
+
+    generate_transactions();
+    barrier.wait(id);
+
+    if (id < n_lock_manager) {
+      schedule_transactions();
+    } else {
+      run_transactions();
+    }
+
+    barrier.wait(id);
+#else
     for (;;) {
 
       ExecutorStatus status;
@@ -115,6 +145,7 @@ public:
              ExecutorStatus::Execute) {
         process_request();
       }
+#endif
     }
   }
 
@@ -440,6 +471,7 @@ private:
   std::vector<StorageType> &storages;
   std::atomic<uint32_t> &lock_manager_status, &worker_status;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  std::shared_ptr<CalvinManager<Workload>> manager;
   CalvinPartitioner partitioner;
   WorkloadType workload;
   std::size_t n_lock_manager, n_workers;
