@@ -329,6 +329,22 @@ public:
 
   std::size_t partitionID() override { return partitionID_; }
 
+  // As Table::checksum, over every key's newest version (Bohm collects the
+  // older ones at the end of each batch).
+  uint64_t checksum() override {
+    uint64_t sum = 0;
+    std::string bytes;
+    map_.for_each_latest([&](const KeyType &key,
+                             std::tuple<MetaDataType, ValueType> &row) {
+      bytes.clear();
+      Encoder enc(bytes);
+      enc << std::get<1>(row);
+      sum += mix64(std::hash<KeyType>{}(key) * 0x9E3779B97F4A7C15ULL ^
+                   std::hash<std::string>{}(bytes));
+    });
+    return sum;
+  }
+
 private:
   MVCCHashMap<N, KeyType, std::tuple<MetaDataType, ValueType>> map_;
   std::size_t tableID_;

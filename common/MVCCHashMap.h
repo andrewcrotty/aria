@@ -239,6 +239,19 @@ public:
         bucket_number(key));
   }
 
+  // Calls f(key, value) with every key's newest version (the list head: new
+  // versions are always inserted at the front), one locked bucket at a time.
+  template <class F> void for_each_latest(F f) {
+    for (auto i = 0u; i < N; i++) {
+      locks[i].lock();
+      for (auto &kv : maps[i]) {
+        if (!kv.second.empty())
+          f(kv.first, get_value(kv.second.front()));
+      }
+      locks[i].unlock();
+    }
+  }
+
 private:
   static uint64_t get_version(std::tuple<uint64_t, ValueType> &t) {
     return std::get<0>(t);

@@ -21,7 +21,7 @@
 # a fixed amount of work (skew_barrier_speed.sh -T S; WARMUP and COOLDOWN
 # seconds, default 3 and 1, are left out of the average) and adds -timed to the
 # default OUTDIR. PROTOCOL=P runs another protocol (skew_barrier_speed.sh -P P;
-# needs DROP=1 and TIMED unless P is Aria; LOCK_MANAGERS for Calvin / AriaFB,
+# needs DROP=1 unless P is Aria, and TIMED for TwoPL; LOCK_MANAGERS for Calvin / AriaFB,
 # default 1) and adds -<p> (lower case) to the default OUTDIR.
 set -euo pipefail
 

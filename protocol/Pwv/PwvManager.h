@@ -36,7 +36,7 @@ public:
   // coordinator_start() (see PwvExecutor::barrier_start).
   void barrier_start() {
     for (;;) {
-      bool running = !stopFlag.load();
+      bool running = next_batch();
       if (running) {
         epoch.fetch_add(1);
         set_worker_status(ExecutorStatus::Pwv_Analysis);
@@ -62,7 +62,7 @@ public:
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
 
-    while (!stopFlag.load()) {
+    while (next_batch()) {
 
       // the coordinator generates a batch of transactions
 

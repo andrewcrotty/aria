@@ -24,7 +24,7 @@
 # -P PROTOCOL runs another protocol (Aria, AriaFB, Bohm, Calvin, Pwv, TwoPL;
 # default Aria; see PROTOCOL and LOCK_MANAGERS in barrier_common.sh). The
 # barrier builds apply to every batch protocol; protocols other than Aria need
-# -T and -D.
+# -D (retry mode is Aria only), and TwoPL (no batches) needs -T.
 #
 # Usage: scripts/skew_barrier_speed.sh [-P PROTOCOL] [-t "8 15"] [-B "10 100 1000"]
 #                                      [-z "0 0.1 ... 0.9 0.999"] [-k KEYS]

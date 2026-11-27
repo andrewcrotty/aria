@@ -121,6 +121,19 @@ public:
 
   void phase_wait() { phase_barrier->wait(id); }
 
+  // Batch protocols other than Aria (which counts its own): starts the next
+  // batch unless the run is over, i.e. the stop flag is set or --batches
+  // batches have started. Returns whether a batch starts.
+  bool next_batch() {
+    if (stopFlag.load() ||
+        (context.batches > 0 && batches_started.load() >= context.batches))
+      return false;
+    batches_started.fetch_add(1);
+    return true;
+  }
+
+  uint64_t batches_run() const override { return batches_started.load(); }
+
   void signal_worker(ExecutorStatus status) {
 
     // only the coordinator node calls this function
@@ -346,6 +359,7 @@ public:
 
   std::unique_ptr<Delay> delay;
   std::unique_ptr<Barrier> phase_barrier; // see init_phase_barrier
+  std::atomic<uint64_t> batches_started{0}; // see next_batch
 };
 
 } // namespace aria

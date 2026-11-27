@@ -42,7 +42,7 @@ public:
   // coordinator_start() (see BohmExecutor::barrier_start).
   void barrier_start() {
     for (;;) {
-      bool running = !stopFlag.load();
+      bool running = next_batch();
       if (running) {
         epoch.fetch_add(1);
         set_worker_status(ExecutorStatus::Bohm_Analysis);
@@ -70,7 +70,7 @@ public:
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
 
-    while (!stopFlag.load()) {
+    while (next_batch()) {
 
       // the coordinator on each machine generates
       // a batch of transactions using the same random seed.

@@ -117,9 +117,13 @@ DEFINE_int32(cooldown, 5,
   CHECK(context.warmup >= 0 && context.cooldown >= 0 &&                        \
         context.time_to_run - context.warmup - context.cooldown > 0)           \
       << "--time_to_run must exceed --warmup + --cooldown.";                   \
-  CHECK((context.batches == 0 && context.commits == 0) ||                      \
+  CHECK(context.batches == 0 || context.protocol == "Aria" ||                  \
+        context.protocol == "AriaFB" || context.protocol == "Bohm" ||          \
+        context.protocol == "Calvin" || context.protocol == "Pwv")             \
+      << "--batches is only supported by the batch protocols.";                \
+  CHECK((context.commits == 0 && !context.retry_aborts) ||                     \
         context.protocol == "Aria")                                            \
-      << "--batches and --commits are only supported by the Aria protocol.";   \
+      << "--commits and --retry_aborts are only supported by Aria.";           \
   CHECK(context.coordinator_num == 1 || context.bohm_single_spin == false)     \
       << "bohm_single_spin must be used in single-node mode.";                 \
   CHECK((context.mvcc ^ (context.protocol == "Bohm")) == 0)                    \

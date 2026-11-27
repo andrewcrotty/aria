@@ -62,7 +62,7 @@ git clone --recursive https://github.com/andrewcrotty/aria.git
 
 - `--seed=S` (Aria only): seed worker i's generator with `S + i`, so every run executes the same
   transactions.
-- `--batches=N` (Aria only): stop after N batches instead of after a fixed time, then log the elapsed
+- `--batches=N` (batch protocols): stop after N batches instead of after a fixed time, then log the elapsed
   time, ms per batch, commit/abort totals and a checksum of every table. With the same seed, batches
   and threads, every correct build must log the same checksum.
 - `--time_to_run=S --warmup=W --cooldown=C` (all protocols; default 25, 10, 5 as in the original):
@@ -82,8 +82,9 @@ git clone --recursive https://github.com/andrewcrotty/aria.git
 - `scripts/skew_barrier_speed.sh [-P PROTOCOL] [-t ...] [-B ...] [-z ...] [-T SECONDS] [-D] ...`: YCSB
   across skew factors (the paper's Fig. 11 workload) on every build; `-P` picks the protocol (Aria,
   AriaFB, Bohm, Calvin, Pwv, TwoPL; default Aria, with the paper's per-protocol flags and
-  `LOCK_MANAGERS` for Calvin / AriaFB). Protocols other than Aria need fixed-time (`-T`) drop-mode
-  (`-D`) runs. `scripts/slurm_skew_sweep.sbatch` runs it as a Slurm job (`PROTOCOL=...`).
+  `LOCK_MANAGERS` for Calvin / AriaFB). Protocols other than Aria need drop mode (`-D`; retry is
+  Aria only), and TwoPL, which has no batches, needs fixed-time (`-T`) runs.
+  `scripts/slurm_skew_sweep.sbatch` runs it as a Slurm job (`PROTOCOL=...`).
 
 **New dependencies**
 

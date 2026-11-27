@@ -22,10 +22,11 @@
 #                 amount of work (no --batches / --commits; WORK is ignored),
 #                 averaging the seconds after WARMUP and before COOLDOWN
 #                 (default 3 and 1). Unset or 0: fixed work.
-#   PROTOCOL      Aria (default), AriaFB, Bohm, Calvin, Pwv or TwoPL. Fixed-work
-#                 runs (--batches / --commits, checksums), --seed and retry mode
-#                 are Aria only: the others need TIMED and RETRY=0 (see
-#                 check_protocol), and their generators are not seeded.
+#   PROTOCOL      Aria (default), AriaFB, Bohm, Calvin, Pwv or TwoPL. Every
+#                 batch protocol supports fixed-work runs (--batches, with
+#                 checksums; AriaFB, Bohm, Calvin and Pwv seed worker i with i,
+#                 ignoring --seed); retry mode (--commits) is Aria only, and
+#                 TwoPL (no batches) needs TIMED (see check_protocol).
 #   LOCK_MANAGERS lock manager threads of Calvin and AriaFB (default 1), taken
 #                 from the workers; Calvin needs threads > LOCK_MANAGERS and
 #                 (threads - LOCK_MANAGERS) a multiple of LOCK_MANAGERS.
@@ -56,8 +57,12 @@ check_protocol() {
     echo "FAIL: unknown protocol '$PROTOCOL' (Aria AriaFB Bohm Calvin Pwv TwoPL)"
     exit 2
   fi
-  if [[ $PROTOCOL != Aria ]] && { (( RETRY )) || (( ! TIMED )); }; then
-    echo "FAIL: $PROTOCOL supports only fixed-time drop-mode runs (TIMED / -T, no -R)"
+  if [[ $PROTOCOL != Aria ]] && (( RETRY )); then
+    echo "FAIL: retry mode (-R) is Aria only; use drop mode (-D) for $PROTOCOL"
+    exit 2
+  fi
+  if [[ $PROTOCOL == TwoPL ]] && (( ! TIMED )); then
+    echo "FAIL: TwoPL has no batches, so it supports only fixed-time runs (TIMED / -T)"
     exit 2
   fi
 }

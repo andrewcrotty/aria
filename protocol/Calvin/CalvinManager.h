@@ -46,7 +46,7 @@ public:
   // coordinator_start() (see CalvinExecutor::barrier_start).
   void barrier_start() {
     for (;;) {
-      bool running = !stopFlag.load();
+      bool running = next_batch();
       if (running) {
         clear_lock_manager_status();
         set_worker_status(ExecutorStatus::Analysis);
@@ -72,7 +72,7 @@ public:
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;
 
-    while (!stopFlag.load()) {
+    while (next_batch()) {
 
       // the coordinator on each machine generates
       // a batch of transactions using the same random seed.
