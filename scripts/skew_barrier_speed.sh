@@ -13,12 +13,21 @@
 # committed, so runs at every skew do the same committed work; -D drops aborts
 # instead, and -y is then the attempted transactions.
 #
+# -T SECONDS runs each benchmark for a fixed time instead (like the original
+# Aria, which runs 25 s and averages seconds 11-20): it averages commit/s and
+# abort/s over the seconds after WARMUP and before COOLDOWN (environment,
+# default 3 and 1; see barrier_common.sh), -y is ignored, and the CSV has
+# commit_per_s and abort_per_s instead of the fixed-work columns. The builds
+# then run different amounts of work, so there is no checksum check, and the
+# speedup is each build's median commit/s over std's.
+#
 # Usage: scripts/skew_barrier_speed.sh [-t "8 15"] [-B "10 100 1000"]
 #                                      [-z "0 0.1 ... 0.9 0.999"] [-k KEYS]
-#                                      [-r REPS] [-y TXNS] [-D] [-s SEED] [-o OUTDIR]
+#                                      [-r REPS] [-y TXNS | -T SECONDS] [-D]
+#                                      [-s SEED] [-o OUTDIR]
 # Run from the repo root (inside barrier_bench's dev shell for the dependencies).
 # Every run goes to OUTDIR/results.csv. Rerunning with the same OUTDIR resumes:
-# runs already in results.csv are skipped (so use the same -k/-y/-s).
+# runs already in results.csv are skipped (so use the same -k/-y/-T/-s).
 set -euo pipefail
 source "$(dirname "$0")/barrier_common.sh"
 
@@ -32,7 +41,7 @@ RETRY=1
 SEED=42
 OUT=skew-runs
 
-while getopts "t:B:z:k:r:y:Ds:o:" opt; do
+while getopts "t:B:z:k:r:y:T:Ds:o:" opt; do
   case $opt in
     t) THREADS=$OPTARG ;;
     B) SIZES=$OPTARG ;;
@@ -40,10 +49,11 @@ while getopts "t:B:z:k:r:y:Ds:o:" opt; do
     k) KEYS=$OPTARG ;;
     r) REPS=$OPTARG ;;
     y) TXNS=$OPTARG ;;
+    T) TIMED=$OPTARG ;;
     D) RETRY=0 ;;
     s) SEED=$OPTARG ;;
     o) OUT=$OPTARG ;;
-    *) sed -n '2,21p' "$0"; exit 2 ;;
+    *) sed -n '2,30p' "$0"; exit 2 ;;
   esac
 done
 YCSB_KEYS=$KEYS
@@ -53,6 +63,7 @@ build_all "$OUT"
 
 CSV="$OUT/results.csv"
 HEADER="zipf,batch_size,threads,build,rep,elapsed_s,ms_per_batch,commit,abort,checksum,batches"
+(( TIMED )) && HEADER="zipf,batch_size,threads,build,rep,commit_per_s,abort_per_s"
 if [[ -s $CSV ]]; then
   if [[ $(head -1 "$CSV") != "$HEADER" ]]; then
     echo "FAIL: $CSV exists with a different header"
@@ -80,6 +91,18 @@ for ZIPF in $ZIPFS; do
           if ! run_aria "$b" ycsb "$n" "$SEED" "$work" "$log" "$size"; then
             echo "run failed: $log"
             fail=1
+            continue
+          fi
+          if (( TIMED )); then
+            read -r cps aps <<< "$(log_average "$log")"
+            if [[ $cps == "?" ]]; then
+              echo "run failed (no average): $log"
+              fail=1
+              continue
+            fi
+            echo "$ZIPF,$size,$n,$b,$rep,$cps,$aps" >> "$CSV"
+            printf '  z=%-5s B=%-5s t=%-3s %-6s rep %d: %12.0f commit/s\n' \
+              "$ZIPF" "$size" "$n" "$b" "$rep" "$cps"
             continue
           fi
           e=$(log_elapsed "$log")
@@ -116,6 +139,31 @@ summary() {
   tput=$(column "$@" '$8 / $6' | stats %.0f)
   echo "$ms ${tput%% *}"
 }
+
+if (( TIMED )); then
+  echo
+  printf '%-5s %6s %3s  %-6s %12s %12s %12s %8s\n' \
+    zipf batch thr build median_c/s min_c/s max_c/s speedup
+  for ZIPF in $ZIPFS; do
+    for size in $SIZES; do
+      for n in $THREADS; do
+        read -r std_med _ _ <<< "$(column "$ZIPF" "$size" "$n" std '$6' | stats %.0f)"
+        for b in $BUILDS; do
+          read -r med lo hi <<< "$(column "$ZIPF" "$size" "$n" "$b" '$6' | stats %.0f)"
+          sp=$(awk -v s="$std_med" -v m="$med" 'BEGIN { if (s > 0) printf "%.2fx", m / s; else print "?" }')
+          printf '%-5s %6s %3s  %-6s %12s %12s %12s %8s\n' \
+            "$ZIPF" "$size" "$n" "$b" "$med" "$lo" "$hi" "$sp"
+        done
+      done
+    done
+  done
+  if (( fail )); then
+    echo "FAIL (logs in $OUT/)"
+    exit 1
+  fi
+  echo "OK: fixed-time runs, no checksum check (results in $CSV)"
+  exit 0
+fi
 
 echo
 printf '%-5s %6s %3s  %-6s %10s %10s %10s %12s %8s\n' \

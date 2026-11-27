@@ -15,11 +15,18 @@
 #   ZIPF          YCSB skew factor; set (even to 0) to draw keys from the global
 #                 key space like the paper's skew figure (--global_key_space).
 #                 Unset: aria's default per-partition uniform keys.
+#   TIMED         seconds: run each benchmark for a fixed time instead of a fixed
+#                 amount of work (no --batches / --commits; WORK is ignored),
+#                 averaging the seconds after WARMUP and before COOLDOWN
+#                 (default 3 and 1). Unset or 0: fixed work.
 BUILD_PREFIX=${BUILD_PREFIX:-build-det}
 RUN_TIMEOUT=${RUN_TIMEOUT:-600}
 RETRY=${RETRY:-0}
 YCSB_KEYS=${YCSB_KEYS:-200000}
 ZIPF=${ZIPF:-}
+TIMED=${TIMED:-0}
+WARMUP=${WARMUP:-3}
+COOLDOWN=${COOLDOWN:-1}
 
 BUILDS="std smc nobar"
 declare -A CMAKE_FLAGS=(
@@ -56,8 +63,11 @@ run_aria() {
   local size=${7:-${DEFAULT_BATCH_SIZE[$bench]}}
   local args=(--logtostderr=1 --id=0 --servers=127.0.0.1:10010 --protocol=Aria
               --threads="$n" --partition_num="$n" --seed="$seed" --batch_size="$size")
-  if (( RETRY )); then
-    args+=(--retry_aborts --commits="$work")
+  (( RETRY )) && args+=(--retry_aborts)
+  if (( TIMED )); then
+    args+=(--time_to_run="$TIMED" --warmup="$WARMUP" --cooldown="$COOLDOWN")
+  elif (( RETRY )); then
+    args+=(--commits="$work")
   else
     args+=(--batches="$work")
   fi
@@ -93,4 +103,12 @@ log_elapsed() {
   local e
   e=$(sed -n 's/.*elapsed: \([0-9.e+-]*\) s,.*/\1/p' "$1")
   echo "${e:-?}"
+}
+
+# log_average LOG -> "commit/s abort/s" of a fixed-time run (TIMED), averaged
+# over the measured seconds ("? ?" where missing)
+log_average() {
+  local a
+  a=$(sed -n 's/.*average commit: \([0-9.e+-]*\) abort: \([0-9.e+-]*\) .*/\1 \2/p' "$1")
+  echo "${a:-? ?}"
 }

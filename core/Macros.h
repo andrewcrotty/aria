@@ -60,6 +60,12 @@ DEFINE_uint64(commits, 0,
 DEFINE_bool(retry_aborts, false,
             "Aria: retry conflict aborts at the front of the next batch "
             "(default: drop them, as the original Aria does)");
+DEFINE_int32(time_to_run, 25,
+             "fixed-time runs: seconds to run (without --batches / --commits)");
+DEFINE_int32(warmup, 10,
+             "fixed-time runs: leading seconds left out of the average");
+DEFINE_int32(cooldown, 5,
+             "fixed-time runs: trailing seconds left out of the average");
 
 #define SETUP_CONTEXT(context)                                                 \
   boost::algorithm::split(context.peers, FLAGS_servers,                        \
@@ -105,6 +111,12 @@ DEFINE_bool(retry_aborts, false,
   context.batches = FLAGS_batches;                                             \
   context.commits = FLAGS_commits;                                             \
   context.retry_aborts = FLAGS_retry_aborts;                                   \
+  context.time_to_run = FLAGS_time_to_run;                                     \
+  context.warmup = FLAGS_warmup;                                               \
+  context.cooldown = FLAGS_cooldown;                                           \
+  CHECK(context.warmup >= 0 && context.cooldown >= 0 &&                        \
+        context.time_to_run - context.warmup - context.cooldown > 0)           \
+      << "--time_to_run must exceed --warmup + --cooldown.";                   \
   CHECK((context.batches == 0 && context.commits == 0) ||                      \
         context.protocol == "Aria")                                            \
       << "--batches and --commits are only supported by the Aria protocol.";   \

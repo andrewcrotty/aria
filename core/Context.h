@@ -59,6 +59,11 @@ public:
   // Aria: retry conflict aborts at the front of the next batch (off: they are
   // dropped, as in the original Aria).
   bool retry_aborts = false;
+  // Fixed-time runs (no --batches / --commits): run time_to_run seconds and
+  // report the average over the seconds after warmup and before cooldown.
+  int time_to_run = 25;
+  int warmup = 10;
+  int cooldown = 5;
 
   bool sleep_on_retry = true;
 

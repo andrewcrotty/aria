@@ -110,8 +110,9 @@ public:
                 << 1e3 * elapsed / batches << " ms/batch, "
                 << commit / elapsed << " commit/s";
     } else {
-      // run timeToRun seconds
-      auto timeToRun = 25, warmup = 10, cooldown = 5;
+      // run timeToRun seconds (--time_to_run, --warmup, --cooldown)
+      auto timeToRun = context.time_to_run, warmup = context.warmup,
+           cooldown = context.cooldown;
       auto startTime = std::chrono::steady_clock::now();
 
       uint64_t total_commit = 0, total_abort_no_retry = 0, total_abort_lock = 0,
