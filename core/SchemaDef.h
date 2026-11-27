@@ -34,6 +34,8 @@
 
 #define STRUCT_FIELDPOS_X(type, name) name##_field,
 
+#define STRUCT_VISIT_X(type, name) f(name);
+
 // the main macro
 #define DO_STRUCT(name, keyfields, valuefields, namespacefields)               \
   namespacefields(NAMESPACE_OPEN) struct name {                                \
@@ -64,6 +66,9 @@
         return !operator==(other);                                             \
       }                                                                        \
       enum { APPLY_X_AND_Y(valuefields, STRUCT_FIELDPOS_X) NFIELDS };          \
+      template <class F> void visit_fields(F &&f) const {                      \
+        APPLY_X_AND_Y(valuefields, STRUCT_VISIT_X)                             \
+      }                                                                        \
     };                                                                         \
     static constexpr std::size_t tableID = __COUNTER__ - __BASE_COUNTER__;     \
   };                                                                           \

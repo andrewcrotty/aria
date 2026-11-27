@@ -12,6 +12,10 @@
 namespace aria {
 template <class T> class Serializer {
 public:
+  // Set only here: the specializations write their fields, this copies the
+  // object's bytes, padding included (see Table::checksum).
+  static constexpr bool copies_bytes = true;
+
   std::string operator()(const T &v) {
     std::string result(sizeof(T), 0);
     memcpy(&result[0], &v, sizeof(T));

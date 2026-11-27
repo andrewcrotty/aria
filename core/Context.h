@@ -51,9 +51,19 @@ public:
   bool cpu_affinity = true;
 
   // Deterministic runs (Aria): seed worker i's generator with seed + i (0: from
-  // its address), and stop after this many batches instead of after a fixed time.
+  // its address), and stop after this many batches, or after the batch in which
+  // this many transactions have committed, instead of after a fixed time.
   uint64_t seed = 0;
   uint64_t batches = 0;
+  uint64_t commits = 0;
+  // Aria: retry conflict aborts at the front of the next batch (off: they are
+  // dropped, as in the original Aria).
+  bool retry_aborts = false;
+  // Fixed-time runs (no --batches / --commits): run time_to_run seconds and
+  // report the average over the seconds after warmup and before cooldown.
+  int time_to_run = 25;
+  int warmup = 10;
+  int cooldown = 5;
 
   bool sleep_on_retry = true;
 

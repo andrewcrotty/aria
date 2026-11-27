@@ -2,6 +2,8 @@
 #include "core/Coordinator.h"
 #include "core/Macros.h"
 
+#include <fstream>
+
 DEFINE_bool(operation_replication, false, "use operation replication");
 DEFINE_string(query, "neworder", "tpcc query, mixed, neworder, payment");
 DEFINE_int32(neworder_dist, 10, "new order distributed.");
@@ -39,12 +41,21 @@ int main(int argc, char *argv[]) {
 
   aria::tpcc::Database db;
   db.initialize(context);
+  bool deterministic = context.batches > 0 || context.commits > 0;
+  if (deterministic) {
+    LOG(INFO) << "load checksum: " << std::hex
+              << db.checksum("load table checksum");
+  }
 
   aria::Coordinator c(FLAGS_id, db, context);
   c.connectToPeers();
   c.start();
-  if (context.batches > 0) {
+  if (deterministic) {
     LOG(INFO) << "db checksum: " << std::hex << db.checksum();
+  }
+  if (FLAGS_dump_table >= 0) {
+    std::ofstream out(FLAGS_dump_file);
+    db.dump(FLAGS_dump_table, out);
   }
   return 0;
 }

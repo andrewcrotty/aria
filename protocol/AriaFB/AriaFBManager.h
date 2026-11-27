@@ -53,7 +53,9 @@ public:
     nthreads += 1;
 #endif
 
-    std::size_t first_cpu = context.cpu_core_id + 2 * context.io_thread_num;
+    // Single node: workers (then the manager) are pinned to consecutive cores
+    // from cpu_core_id (Coordinator leaves the idle dispatchers unpinned).
+    std::size_t first_cpu = context.cpu_core_id;
     barrier = std::make_unique<Barrier>(nthreads, first_cpu);
 #endif
   }
@@ -62,6 +64,8 @@ public:
   bool batches_done() const {
     return context.batches > 0 && epoch.load() >= context.batches;
   }
+
+  uint64_t batches_run() const override { return epoch.load(); }
 
   bool prepare_local_batch() {
     if (stopFlag.load() || batches_done()) {

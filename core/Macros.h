@@ -52,8 +52,24 @@ DEFINE_int32(ariaFB_lock_manager, 0,
 DEFINE_uint64(seed, 0,
               "Aria: seed worker i's generator with seed + i (0: from its address)");
 DEFINE_uint64(batches, 0,
-              "Aria: stop after this many batches and log a database checksum "
-              "(0: run for a fixed time)");
+              "batch protocols: stop after this many batches and log a database "
+              "checksum (0: run for a fixed time)");
+DEFINE_uint64(commits, 0,
+              "Aria: stop after the batch in which this many transactions have "
+              "committed and log a database checksum (0: run for a fixed time)");
+DEFINE_int32(dump_table, -1,
+             "TPC-C: after the run, dump this table's rows to --dump_file "
+             "(key hash, serialized value in hex; -1: off)");
+DEFINE_string(dump_file, "table.rows", "where --dump_table writes");
+DEFINE_bool(retry_aborts, false,
+            "Aria: retry conflict aborts at the front of the next batch "
+            "(default: drop them, as the original Aria does)");
+DEFINE_int32(time_to_run, 25,
+             "fixed-time runs: seconds to run (without --batches / --commits)");
+DEFINE_int32(warmup, 10,
+             "fixed-time runs: leading seconds left out of the average");
+DEFINE_int32(cooldown, 5,
+             "fixed-time runs: trailing seconds left out of the average");
 
 #define SETUP_CONTEXT(context)                                                 \
   boost::algorithm::split(context.peers, FLAGS_servers,                        \
@@ -97,8 +113,21 @@ DEFINE_uint64(batches, 0,
   context.ariaFB_lock_manager = FLAGS_ariaFB_lock_manager;                     \
   context.seed = FLAGS_seed;                                                   \
   context.batches = FLAGS_batches;                                             \
-  CHECK(context.batches == 0 || context.protocol == "Aria")                    \
-      << "--batches is only supported by the Aria protocol.";                  \
+  context.commits = FLAGS_commits;                                             \
+  context.retry_aborts = FLAGS_retry_aborts;                                   \
+  context.time_to_run = FLAGS_time_to_run;                                     \
+  context.warmup = FLAGS_warmup;                                               \
+  context.cooldown = FLAGS_cooldown;                                           \
+  CHECK(context.warmup >= 0 && context.cooldown >= 0 &&                        \
+        context.time_to_run - context.warmup - context.cooldown > 0)           \
+      << "--time_to_run must exceed --warmup + --cooldown.";                   \
+  CHECK(context.batches == 0 || context.protocol == "Aria" ||                  \
+        context.protocol == "AriaFB" || context.protocol == "Bohm" ||          \
+        context.protocol == "Calvin" || context.protocol == "Pwv")             \
+      << "--batches is only supported by the batch protocols.";                \
+  CHECK((context.commits == 0 && !context.retry_aborts) ||                     \
+        context.protocol == "Aria")                                            \
+      << "--commits and --retry_aborts are only supported by Aria.";           \
   CHECK(context.coordinator_num == 1 || context.bohm_single_spin == false)     \
       << "bohm_single_spin must be used in single-node mode.";                 \
   CHECK((context.mvcc ^ (context.protocol == "Bohm")) == 0)                    \

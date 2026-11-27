@@ -77,6 +77,10 @@ public:
 
   ~AriaExecutor() = default;
 
+  // The manager counts the batches; with NO_MANAGER it is not among the
+  // Coordinator's workers, so the executors report its count.
+  uint64_t batches_run() const override { return manager->batches_run(); }
+
   void start() override {
     LOG(INFO) << "AriaExecutor " << id << " started. ";
 
@@ -171,8 +175,8 @@ public:
 
       if (transactions[i] == nullptr || i >= n_abort) {
         auto partition_id = get_partition_id();
-        transactions[i] =
-            workload.next_transaction(context, partition_id, storages[i]);
+        transactions[i] = workload.next_transaction(
+            context, partition_id, storages[manager->storage_of[i]]);
       } else {
         transactions[i]->reset();
       }
@@ -389,6 +393,7 @@ public:
 
       if (transactions[i]->waw) {
         protocol.abort(*transactions[i], messages);
+        transactions[i]->abort_lock = context.retry_aborts;
         n_abort_lock.fetch_add(1);
         continue;
       }
@@ -415,11 +420,13 @@ public:
           } else {
             n_abort_lock.fetch_add(1);
             protocol.abort(*transactions[i], messages);
+            transactions[i]->abort_lock = context.retry_aborts;
           }
         } else {
           if (transactions[i]->raw) {
             n_abort_lock.fetch_add(1);
             protocol.abort(*transactions[i], messages);
+            transactions[i]->abort_lock = context.retry_aborts;
           } else {
             protocol.commit(*transactions[i], messages);
             n_commit.fetch_add(1);

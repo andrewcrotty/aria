@@ -66,7 +66,9 @@ public:
                                       iDispatchers[i].get());
       oDispatcherThreads.emplace_back(&OutgoingDispatcher::start,
                                       oDispatchers[i].get());
-      if (context.cpu_affinity) {
+      // Single node: the dispatchers return at once, so don't spend cores on
+      // them; the workers are then pinned from cpu_core_id.
+      if (context.cpu_affinity && context.coordinator_num > 1) {
         pin_thread_to_core(iDispatcherThreads[i]);
         pin_thread_to_core(oDispatcherThreads[i]);
       }
@@ -76,7 +78,7 @@ public:
 
     LOG(INFO) << "Coordinator starts to run " << workers.size() << " workers.";
 
-    auto runStart = std::chrono::steady_clock::now(); // --batches timing
+    auto runStart = std::chrono::steady_clock::now(); // --batches/--commits timing
     for (auto i = 0u; i < workers.size(); i++) {
       threads.emplace_back(&Worker::start, workers[i].get());
       if (context.cpu_affinity) {
@@ -84,30 +86,33 @@ public:
       }
     }
 
-    if (context.batches > 0) {
-      // --batches: the manager stops after that many batches and the workers
-      // exit on their own; report totals and the time from launching the
-      // workers to the last one exiting (the same work in every build).
+    if (context.batches > 0 || context.commits > 0) {
+      // --batches / --commits: the manager stops after that many batches (or
+      // commits) and the workers exit on their own; report totals and the time
+      // from launching the workers to the last one exiting (the same work in
+      // every build).
       for (auto &thread : threads)
         thread.join();
       double elapsed = std::chrono::duration<double>(
                            std::chrono::steady_clock::now() - runStart)
                            .count();
-      uint64_t commit = 0, abort = 0;
+      uint64_t commit = 0, abort = 0, batches = 0;
       for (auto &worker : workers) {
+        batches = std::max(batches, worker->batches_run());
         commit += worker->n_commit.load();
         abort += worker->n_abort_no_retry.load() + worker->n_abort_lock.load() +
                  worker->n_abort_read_validation.load();
         worker->onExit();
       }
-      LOG(INFO) << "batches: " << context.batches << " total commit: " << commit
+      LOG(INFO) << "batches: " << batches << " total commit: " << commit
                 << " total abort: " << abort;
       LOG(INFO) << "elapsed: " << elapsed << " s, "
-                << 1e3 * elapsed / context.batches << " ms/batch, "
+                << 1e3 * elapsed / batches << " ms/batch, "
                 << commit / elapsed << " commit/s";
     } else {
-      // run timeToRun seconds
-      auto timeToRun = 25, warmup = 10, cooldown = 5;
+      // run timeToRun seconds (--time_to_run, --warmup, --cooldown)
+      auto timeToRun = context.time_to_run, warmup = context.warmup,
+           cooldown = context.cooldown;
       auto startTime = std::chrono::steady_clock::now();
 
       uint64_t total_commit = 0, total_abort_no_retry = 0, total_abort_lock = 0,

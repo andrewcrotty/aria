@@ -10,6 +10,7 @@
 #include "common/MVCCHashMap.h"
 #include "common/StringPiece.h"
 #include <functional>
+#include <ostream>
 #include <memory>
 #include <string>
 
@@ -74,6 +75,12 @@ public:
   virtual uint64_t checksum() {
     CHECK(false) << "checksum() is not implemented for this table type.";
     return 0;
+  }
+
+  // Writes one line per row: the key's hash and the value's serialized bytes in
+  // hex (what checksum() hashes), to diff two runs' tables row by row.
+  virtual void dump(std::ostream &os) {
+    CHECK(false) << "dump() is not implemented for this table type.";
   }
 };
 
@@ -177,19 +184,47 @@ public:
 
   std::size_t partitionID() override { return partitionID_; }
 
+  // The bytes checksum() and dump() hash for a value: its serialization, or,
+  // where that is a copy of the struct (no Serializer specialization), its
+  // fields one by one, as the struct's padding is never written and need not
+  // be the same in two runs.
+  static void value_bytes(const ValueType &value, std::string &bytes) {
+    bytes.clear();
+    Encoder enc(bytes);
+    if constexpr (requires { Serializer<ValueType>::copies_bytes; } &&
+                  requires { value.visit_fields([](const auto &) {}); }) {
+      value.visit_fields([&](const auto &field) { enc << field; });
+    } else {
+      enc << value;
+    }
+  }
+
   uint64_t checksum() override {
     uint64_t sum = 0;
     std::string bytes;
     map_.for_each([&](const KeyType &key,
                       std::tuple<MetaDataType, ValueType> &row) {
-      // Hash the serialized value, not its bytes in memory: structs have padding.
-      bytes.clear();
-      Encoder enc(bytes);
-      enc << std::get<1>(row);
+      value_bytes(std::get<1>(row), bytes);
       sum += mix64(std::hash<KeyType>{}(key) * 0x9E3779B97F4A7C15ULL ^
                    std::hash<std::string>{}(bytes));
     });
     return sum;
+  }
+
+  void dump(std::ostream &os) override {
+    static const char hex[] = "0123456789abcdef";
+    std::string bytes, line;
+    map_.for_each([&](const KeyType &key,
+                      std::tuple<MetaDataType, ValueType> &row) {
+      value_bytes(std::get<1>(row), bytes);
+      line.clear();
+      for (unsigned char c : bytes) {
+        line += hex[c >> 4];
+        line += hex[c & 15];
+      }
+      os << std::hex << std::hash<KeyType>{}(key) << std::dec << " " << line
+         << "\n";
+    });
   }
 
 private:
@@ -328,6 +363,20 @@ public:
   std::size_t tableID() override { return tableID_; }
 
   std::size_t partitionID() override { return partitionID_; }
+
+  // As Table::checksum, over every key's newest version (Bohm collects the
+  // older ones at the end of each batch).
+  uint64_t checksum() override {
+    uint64_t sum = 0;
+    std::string bytes;
+    map_.for_each_latest([&](const KeyType &key,
+                             std::tuple<MetaDataType, ValueType> &row) {
+      Table<N, KeyType, ValueType>::value_bytes(std::get<1>(row), bytes);
+      sum += mix64(std::hash<KeyType>{}(key) * 0x9E3779B97F4A7C15ULL ^
+                   std::hash<std::string>{}(bytes));
+    });
+    return sum;
+  }
 
 private:
   MVCCHashMap<N, KeyType, std::tuple<MetaDataType, ValueType>> map_;
