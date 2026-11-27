@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "common/Barrier.h"
 #include "core/Context.h"
 #include "core/ControlMessage.h"
 #include "core/Defs.h"
@@ -100,6 +101,25 @@ public:
   void set_worker_status(ExecutorStatus status) {
     worker_status.store(static_cast<uint32_t>(status));
   }
+
+  // Batch protocols (USE_BARRIER, single node): the workers (tids 0 .. n - 1)
+  // and this manager (tid n, its worker id) meet at phase_barrier at every
+  // phase boundary instead of the worker_status / counter hand-off. Workers and
+  // then the manager are pinned to consecutive CPUs from cpu_core_id
+  // (Coordinator leaves the idle dispatchers unpinned), which is what Barrier
+  // expects. Aria keeps its own barrier (AriaManager::barrier).
+  void init_phase_barrier() {
+#ifdef USE_BARRIER
+    if (context.coordinator_num == 1) {
+      phase_barrier = std::make_unique<Barrier>(context.worker_num + 1,
+                                                context.cpu_core_id);
+      LOG(INFO) << "Phase barrier for " << context.worker_num + 1
+                << " threads (workers + manager).";
+    }
+#endif
+  }
+
+  void phase_wait() { phase_barrier->wait(id); }
 
   void signal_worker(ExecutorStatus status) {
 
@@ -325,6 +345,7 @@ public:
   std::atomic<uint32_t> n_started_workers;
 
   std::unique_ptr<Delay> delay;
+  std::unique_ptr<Barrier> phase_barrier; // see init_phase_barrier
 };
 
 } // namespace aria

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "common/Barrier.h"
 #include "common/Percentile.h"
 #include "core/Delay.h"
 #include "core/Worker.h"
@@ -39,12 +40,13 @@ public:
                  std::atomic<uint32_t> &lock_manager_status,
                  std::atomic<uint32_t> &worker_status,
                  std::atomic<uint32_t> &n_complete_workers,
-                 std::atomic<uint32_t> &n_started_workers)
+                 std::atomic<uint32_t> &n_started_workers,
+                 Barrier *barrier = nullptr)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), storages(storages),
         lock_manager_status(lock_manager_status), worker_status(worker_status),
         n_complete_workers(n_complete_workers),
-        n_started_workers(n_started_workers),
+        n_started_workers(n_started_workers), barrier(barrier),
         partitioner(coordinator_id, context.coordinator_num,
                     CalvinHelper::string_to_vint(context.replica_group)),
         workload(coordinator_id, db, random, partitioner),
@@ -71,8 +73,35 @@ public:
 
   ~CalvinExecutor() = default;
 
+  // USE_BARRIER, single node: the same phases as start(), separated by the
+  // manager's phase barrier (see CalvinManager::barrier_start).
+  void barrier_start() {
+    for (;;) {
+      barrier->wait(id); // the manager has prepared the batch (or exits)
+      if (static_cast<ExecutorStatus>(worker_status.load()) ==
+          ExecutorStatus::EXIT)
+        return;
+
+      generate_transactions();
+      barrier->wait(id);
+
+      if (id < n_lock_manager) {
+        schedule_transactions();
+      } else {
+        run_transactions();
+      }
+      barrier->wait(id);
+    }
+  }
+
   void start() override {
     LOG(INFO) << "CalvinExecutor " << id << " started. ";
+
+    if (barrier) {
+      barrier_start();
+      LOG(INFO) << "CalvinExecutor " << id << " exits. ";
+      return;
+    }
 
     for (;;) {
 
@@ -440,6 +469,7 @@ private:
   std::vector<StorageType> &storages;
   std::atomic<uint32_t> &lock_manager_status, &worker_status;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  Barrier *barrier; // the manager's phase barrier (null: status hand-off)
   CalvinPartitioner partitioner;
   WorkloadType workload;
   std::size_t n_lock_manager, n_workers;

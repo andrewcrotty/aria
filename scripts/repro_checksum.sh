@@ -37,6 +37,7 @@ while getopts "b:t:B:w:n:Rs:o:" opt; do
     *) sed -n '2,16p' "$0"; exit 2 ;;
   esac
 done
+check_protocol
 
 mkdir -p "$OUT"
 build_all "$OUT"

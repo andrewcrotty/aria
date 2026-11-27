@@ -108,7 +108,7 @@ public:
             coordinator_id, i, db, context, manager->transactions,
             manager->storages, manager->lock_manager_status,
             manager->worker_status, manager->n_completed_workers,
-            manager->n_started_workers);
+            manager->n_started_workers, manager->phase_barrier.get());
         workers.push_back(w);
         manager->add_worker(w);
         all_executors.push_back(w.get());
@@ -137,7 +137,8 @@ public:
         workers.push_back(std::make_shared<BohmExecutor<WorkloadType>>(
             coordinator_id, i, db, context, manager->transactions,
             manager->storages, manager->epoch, manager->worker_status,
-            manager->n_completed_workers, manager->n_started_workers));
+            manager->n_completed_workers, manager->n_started_workers,
+            manager->phase_barrier.get()));
       }
 
       workers.push_back(manager);
@@ -181,7 +182,7 @@ public:
             manager->partition_ids, manager->storages, manager->epoch,
             manager->lock_manager_status, manager->worker_status,
             manager->total_abort, manager->n_completed_workers,
-            manager->n_started_workers);
+            manager->n_started_workers, manager->phase_barrier.get());
         workers.push_back(w);
         manager->add_worker(w);
         all_executors.push_back(w.get());
@@ -205,7 +206,8 @@ public:
         workers.push_back(std::make_shared<PwvExecutor<Database>>(
             coordinator_id, i, db, context, manager->transactions,
             manager->storages, manager->epoch, manager->worker_status,
-            manager->n_completed_workers, manager->n_started_workers));
+            manager->n_completed_workers, manager->n_started_workers,
+            manager->phase_barrier.get()));
       }
 
       workers.push_back(manager);

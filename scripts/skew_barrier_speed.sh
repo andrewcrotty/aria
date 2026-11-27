@@ -21,7 +21,12 @@
 # then run different amounts of work, so there is no checksum check, and the
 # speedup is each build's median commit/s over std's.
 #
-# Usage: scripts/skew_barrier_speed.sh [-t "8 15"] [-B "10 100 1000"]
+# -P PROTOCOL runs another protocol (Aria, AriaFB, Bohm, Calvin, Pwv, TwoPL;
+# default Aria; see PROTOCOL and LOCK_MANAGERS in barrier_common.sh). The
+# barrier builds apply to every batch protocol; protocols other than Aria need
+# -T and -D.
+#
+# Usage: scripts/skew_barrier_speed.sh [-P PROTOCOL] [-t "8 15"] [-B "10 100 1000"]
 #                                      [-z "0 0.1 ... 0.9 0.999"] [-k KEYS]
 #                                      [-r REPS] [-y TXNS | -T SECONDS] [-D]
 #                                      [-s SEED] [-o OUTDIR]
@@ -41,8 +46,9 @@ RETRY=1
 SEED=42
 OUT=skew-runs
 
-while getopts "t:B:z:k:r:y:T:Ds:o:" opt; do
+while getopts "P:t:B:z:k:r:y:T:Ds:o:" opt; do
   case $opt in
+    P) PROTOCOL=$OPTARG ;;
     t) THREADS=$OPTARG ;;
     B) SIZES=$OPTARG ;;
     z) ZIPFS=$OPTARG ;;
@@ -53,10 +59,13 @@ while getopts "t:B:z:k:r:y:T:Ds:o:" opt; do
     D) RETRY=0 ;;
     s) SEED=$OPTARG ;;
     o) OUT=$OPTARG ;;
-    *) sed -n '2,30p' "$0"; exit 2 ;;
+    *) sed -n '2,35p' "$0"; exit 2 ;;
   esac
 done
 YCSB_KEYS=$KEYS
+check_protocol
+logpre=ycsb
+[[ $PROTOCOL != Aria ]] && logpre=${PROTOCOL,,}_ycsb
 
 mkdir -p "$OUT"
 build_all "$OUT"
@@ -87,7 +96,7 @@ for ZIPF in $ZIPFS; do
         for ((k = 0; k < ${#builds[@]}; k++)); do
           b=${builds[(k + rep) % ${#builds[@]}]}
           done_run "$ZIPF" "$size" "$n" "$b" "$rep" && continue
-          log="$OUT/ycsb_z${ZIPF}_B${size}_${b}_t${n}_r${rep}.log"
+          log="$OUT/${logpre}_z${ZIPF}_B${size}_${b}_t${n}_r${rep}.log"
           if ! run_aria "$b" ycsb "$n" "$SEED" "$work" "$log" "$size"; then
             echo "run failed: $log"
             fail=1

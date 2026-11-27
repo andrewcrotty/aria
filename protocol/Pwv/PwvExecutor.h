@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "common/Barrier.h"
 #include "common/Percentile.h"
 #include "core/Delay.h"
 #include "core/Worker.h"
@@ -33,20 +34,43 @@ public:
               std::vector<StorageType> &storages, std::atomic<uint32_t> &epoch,
               std::atomic<uint32_t> &worker_status,
               std::atomic<uint32_t> &n_complete_workers,
-              std::atomic<uint32_t> &n_started_workers)
+              std::atomic<uint32_t> &n_started_workers,
+              Barrier *barrier = nullptr)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), storages(storages), epoch(epoch),
         worker_status(worker_status), n_complete_workers(n_complete_workers),
-        n_started_workers(n_started_workers), workload(db, random),
-        init_transaction(false),
+        n_started_workers(n_started_workers), barrier(barrier),
+        workload(db, random), init_transaction(false),
         random(id), // make sure each worker has a different seed.
         sleep_random(reinterpret_cast<uint64_t>(this)) {}
 
   ~PwvExecutor() = default;
 
+  // USE_BARRIER, single node: the same phases as start(), separated by the
+  // manager's phase barrier (see PwvManager::barrier_start).
+  void barrier_start() {
+    for (;;) {
+      barrier->wait(id); // the manager has prepared the batch (or exits)
+      if (static_cast<ExecutorStatus>(worker_status.load()) ==
+          ExecutorStatus::EXIT)
+        return;
+
+      generate_transactions();
+      barrier->wait(id);
+      run_transactions();
+      barrier->wait(id);
+    }
+  }
+
   void start() override {
 
     LOG(INFO) << "PwvExecutor" << id << " started. ";
+
+    if (barrier) {
+      barrier_start();
+      LOG(INFO) << "PwvExecutor" << id << " exits. ";
+      return;
+    }
 
     for (;;) {
 
@@ -121,6 +145,7 @@ private:
   std::vector<StorageType> &storages;
   std::atomic<uint32_t> &epoch, &worker_status;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  Barrier *barrier; // the manager's phase barrier (null: status hand-off)
   WorkloadType workload;
   bool init_transaction;
   RandomType random, sleep_random;

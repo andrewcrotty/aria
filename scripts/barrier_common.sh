@@ -1,10 +1,13 @@
-# Shared by check_barrier_determinism.sh and compare_barrier_speed.sh (source it).
+# Shared by check_barrier_determinism.sh, compare_barrier_speed.sh and
+# skew_barrier_speed.sh (source it).
 #
-# The three barrier builds of Aria, each in $BUILD_PREFIX-<name>:
+# The three barrier builds, each in $BUILD_PREFIX-<name>. On a single node they
+# set the phase hand-off of every batch protocol (Aria, AriaFB, Bohm, Calvin,
+# Pwv); TwoPL has no batches and is the same in all three:
 #
 #   std    USE_BARRIER=ON  (std::barrier)
 #   smc    USE_BARRIER=ON  USE_SMC_BARRIER=ON  (SmcBarrier; needs ASMJIT_ROOT or $ASMJIT)
-#   nobar  USE_BARRIER=OFF (Aria's original signaling, no barrier at all)
+#   nobar  USE_BARRIER=OFF (the original signaling, no barrier at all)
 
 # Environment overrides:
 #   BUILD_PREFIX  build directory prefix (default build-det; use a per-host prefix
@@ -19,6 +22,13 @@
 #                 amount of work (no --batches / --commits; WORK is ignored),
 #                 averaging the seconds after WARMUP and before COOLDOWN
 #                 (default 3 and 1). Unset or 0: fixed work.
+#   PROTOCOL      Aria (default), AriaFB, Bohm, Calvin, Pwv or TwoPL. Fixed-work
+#                 runs (--batches / --commits, checksums), --seed and retry mode
+#                 are Aria only: the others need TIMED and RETRY=0 (see
+#                 check_protocol), and their generators are not seeded.
+#   LOCK_MANAGERS lock manager threads of Calvin and AriaFB (default 1), taken
+#                 from the workers; Calvin needs threads > LOCK_MANAGERS and
+#                 (threads - LOCK_MANAGERS) a multiple of LOCK_MANAGERS.
 BUILD_PREFIX=${BUILD_PREFIX:-build-det}
 RUN_TIMEOUT=${RUN_TIMEOUT:-600}
 RETRY=${RETRY:-0}
@@ -27,6 +37,30 @@ ZIPF=${ZIPF:-}
 TIMED=${TIMED:-0}
 WARMUP=${WARMUP:-3}
 COOLDOWN=${COOLDOWN:-1}
+PROTOCOL=${PROTOCOL:-Aria}
+LOCK_MANAGERS=${LOCK_MANAGERS:-1}
+
+# Per-protocol flags, as in the paper's skew script (scripts/aws_reordering.py).
+declare -A PROTOCOL_FLAGS=(
+  [Aria]=""
+  [AriaFB]="--ariaFB_lock_manager=$LOCK_MANAGERS"
+  [Bohm]="--mvcc=True --bohm_single_spin=True --same_batch=False"
+  [Calvin]="--lock_manager=$LOCK_MANAGERS --replica_group=1 --same_batch=False"
+  [Pwv]="--same_batch=False"
+  [TwoPL]=""
+)
+
+# check_protocol: exit unless PROTOCOL is known and the run mode suits it.
+check_protocol() {
+  if [[ -z ${PROTOCOL_FLAGS[$PROTOCOL]+set} ]]; then
+    echo "FAIL: unknown protocol '$PROTOCOL' (Aria AriaFB Bohm Calvin Pwv TwoPL)"
+    exit 2
+  fi
+  if [[ $PROTOCOL != Aria ]] && { (( RETRY )) || (( ! TIMED )); }; then
+    echo "FAIL: $PROTOCOL supports only fixed-time drop-mode runs (TIMED / -T, no -R)"
+    exit 2
+  fi
+}
 
 BUILDS="std smc nobar"
 declare -A CMAKE_FLAGS=(
@@ -57,12 +91,16 @@ declare -A DEFAULT_BATCH_SIZE=([ycsb]=1000 [tpcc]=500)
 # count (--batches; conflict aborts are dropped, as in the original Aria, so the
 # work is attempts). With RETRY=1 it is a commit target: conflict aborts are
 # retried in the next batch and the run stops after the batch in which WORK
-# transactions have committed (--retry_aborts --commits).
+# transactions have committed (--retry_aborts --commits). Runs PROTOCOL (default
+# Aria) with its PROTOCOL_FLAGS.
 run_aria() {
   local build=$1 bench=$2 n=$3 seed=$4 work=$5 log=$6
   local size=${7:-${DEFAULT_BATCH_SIZE[$bench]}}
-  local args=(--logtostderr=1 --id=0 --servers=127.0.0.1:10010 --protocol=Aria
+  local args=(--logtostderr=1 --id=0 --servers=127.0.0.1:10010 --protocol="$PROTOCOL"
               --threads="$n" --partition_num="$n" --seed="$seed" --batch_size="$size")
+  local extra
+  read -ra extra <<< "${PROTOCOL_FLAGS[$PROTOCOL]}"
+  args+=("${extra[@]}")
   (( RETRY )) && args+=(--retry_aborts)
   if (( TIMED )); then
     args+=(--time_to_run="$TIMED" --warmup="$WARMUP" --cooldown="$COOLDOWN")

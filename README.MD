@@ -51,16 +51,22 @@ git clone --recursive https://github.com/andrewcrotty/aria.git
 
 **CMake options**
 
-- `-DUSE_BARRIER=ON` (default): phase barriers instead of Aria's original signaling.
+- `-DUSE_BARRIER=ON` (default): on a single node, phase barriers instead of the original
+  signaling in every batch protocol: Aria, AriaFB, Bohm, Calvin and Pwv (the workers and the
+  manager meet at the barrier at each phase boundary; see `Manager::init_phase_barrier`). TwoPL has
+  no batches and is unaffected. Multi-node runs keep the original signaling.
 - `-DUSE_SMC_BARRIER=ON`: use `SmcBarrier`, with slots grouped by the NUMA nodes of the CPUs the
   workers are pinned to. Needs `-DASMJIT_ROOT=<prefix>` (defaults to `$ASMJIT`).
 
-**Run flags (Aria protocol only)**
+**Run flags**
 
-- `--seed=S`: seed worker i's generator with `S + i`, so every run executes the same transactions.
-- `--batches=N`: stop after N batches instead of after 25 s, then log the elapsed time, ms per
-  batch, commit/abort totals and a checksum of every table. With the same seed, batches and threads,
-  every correct build must log the same checksum.
+- `--seed=S` (Aria only): seed worker i's generator with `S + i`, so every run executes the same
+  transactions.
+- `--batches=N` (Aria only): stop after N batches instead of after a fixed time, then log the elapsed
+  time, ms per batch, commit/abort totals and a checksum of every table. With the same seed, batches
+  and threads, every correct build must log the same checksum.
+- `--time_to_run=S --warmup=W --cooldown=C` (all protocols; default 25, 10, 5 as in the original):
+  fixed-time runs average commit/s over the seconds after W and before C.
 
 **Scripts** (run from the repo root; both build `build-det-{std,smc,nobar}`, i.e. `std::barrier`,
 `SmcBarrier` and no barrier, and share `scripts/barrier_common.sh`)
@@ -73,6 +79,11 @@ git clone --recursive https://github.com/andrewcrotty/aria.git
   median/min/max ms per batch and the speedup over `std::barrier`. `-B` sweeps the batch size;
   `-y`/`-c` fix the total transactions per run. It also fails on any checksum mismatch. Every run is
   written to `DIR/results.csv`.
+- `scripts/skew_barrier_speed.sh [-P PROTOCOL] [-t ...] [-B ...] [-z ...] [-T SECONDS] [-D] ...`: YCSB
+  across skew factors (the paper's Fig. 11 workload) on every build; `-P` picks the protocol (Aria,
+  AriaFB, Bohm, Calvin, Pwv, TwoPL; default Aria, with the paper's per-protocol flags and
+  `LOCK_MANAGERS` for Calvin / AriaFB). Protocols other than Aria need fixed-time (`-T`) drop-mode
+  (`-D`) runs. `scripts/slurm_skew_sweep.sbatch` runs it as a Slurm job (`PROTOCOL=...`).
 
 **New dependencies**
 

@@ -6,7 +6,7 @@
 # One skew_barrier_speed.sh sweep as a Slurm job, on a whole node.
 #
 #   sbatch -p <partition> -w <node> -o skew-runs/<node>/slurm-%j.out \
-#          --export=ALL,ASMJIT=<asmjit prefix>[,ZIPFS="0 0.5 0.999"][,TXNS=N][,DROP=1][,TIMED=S][,OUTDIR=<dir>] \
+#          --export=ALL,ASMJIT=<asmjit prefix>[,ZIPFS="0 0.5 0.999"][,TXNS=N][,DROP=1][,TIMED=S][,PROTOCOL=P][,LOCK_MANAGERS=L][,OUTDIR=<dir>] \
 #          scripts/slurm_skew_sweep.sbatch "<threads>" "<batch sizes>" <reps>
 #
 # Submit from the repo root. Builds go to build-det-<host>-* (several machines
@@ -20,7 +20,9 @@
 # committed, transactions. TIMED=S runs each benchmark for S seconds instead of
 # a fixed amount of work (skew_barrier_speed.sh -T S; WARMUP and COOLDOWN
 # seconds, default 3 and 1, are left out of the average) and adds -timed to the
-# default OUTDIR.
+# default OUTDIR. PROTOCOL=P runs another protocol (skew_barrier_speed.sh -P P;
+# needs DROP=1 and TIMED unless P is Aria; LOCK_MANAGERS for Calvin / AriaFB,
+# default 1) and adds -<p> (lower case) to the default OUTDIR.
 set -euo pipefail
 
 THREADS=${1:?thread counts, e.g. "8 15"}
@@ -41,12 +43,18 @@ if [[ ${TIMED:-0} != 0 ]]; then
   opts+=(-T "$TIMED")
   suffix=$suffix-timed
 fi
+PROTOCOL=${PROTOCOL:-Aria}
+opts+=(-P "$PROTOCOL")
+if [[ $PROTOCOL != Aria ]]; then
+  suffix=$suffix-${PROTOCOL,,}
+  [[ $PROTOCOL == Calvin || $PROTOCOL == AriaFB ]] && suffix=$suffix-lm${LOCK_MANAGERS:-1}
+fi
 OUTDIR=${OUTDIR:-skew-runs/$host$suffix}
 [[ -n ${ZIPFS:-} ]] && opts+=(-z "$ZIPFS")
 [[ -n ${TXNS:-} ]] && opts+=(-y "$TXNS")
 
 echo "== $(date) job ${SLURM_JOB_ID:-local} on $host: threads [$THREADS] sizes [$SIZES] reps $REPS zipfs [${ZIPFS:-default}]"
-echo "== ASMJIT=${ASMJIT:-unset} BUILD_PREFIX=$BUILD_PREFIX RUN_TIMEOUT=$RUN_TIMEOUT OUTDIR=$OUTDIR TXNS=${TXNS:-default} DROP=${DROP:-0} TIMED=${TIMED:-0} WARMUP=${WARMUP:-3} COOLDOWN=${COOLDOWN:-1}"
+echo "== ASMJIT=${ASMJIT:-unset} BUILD_PREFIX=$BUILD_PREFIX RUN_TIMEOUT=$RUN_TIMEOUT OUTDIR=$OUTDIR TXNS=${TXNS:-default} DROP=${DROP:-0} TIMED=${TIMED:-0} WARMUP=${WARMUP:-3} COOLDOWN=${COOLDOWN:-1} PROTOCOL=$PROTOCOL LOCK_MANAGERS=${LOCK_MANAGERS:-1}"
 mkdir -p "$OUTDIR"
 scripts/skew_barrier_speed.sh -t "$THREADS" -B "$SIZES" -r "$REPS" "${opts[@]}" -o "$OUTDIR"
 echo "== $(date) done"

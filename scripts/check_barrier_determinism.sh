@@ -35,6 +35,7 @@ while getopts "t:b:RC:s:o:" opt; do
     *) sed -n '2,20p' "$0"; exit 2 ;;
   esac
 done
+check_protocol
 WORK=$BATCHES
 (( RETRY )) && WORK=$COMMITS
 

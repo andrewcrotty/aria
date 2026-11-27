@@ -6,6 +6,7 @@
 
 #include "core/Partitioner.h"
 
+#include "common/Barrier.h"
 #include "common/Percentile.h"
 #include "core/Delay.h"
 #include "core/Worker.h"
@@ -50,13 +51,14 @@ public:
                  std::atomic<uint32_t> &worker_status,
                  std::atomic<uint32_t> &total_abort,
                  std::atomic<uint32_t> &n_complete_workers,
-                 std::atomic<uint32_t> &n_started_workers)
+                 std::atomic<uint32_t> &n_started_workers,
+                 Barrier *barrier = nullptr)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), partition_ids(partition_ids),
         storages(storages), epoch(epoch),
         lock_manager_status(lock_manager_status), worker_status(worker_status),
         total_abort(total_abort), n_complete_workers(n_complete_workers),
-        n_started_workers(n_started_workers),
+        n_started_workers(n_started_workers), barrier(barrier),
         partitioner(PartitionerFactory::create_partitioner(
             context.partitioner, coordinator_id, context.coordinator_num)),
         workload(coordinator_id, db, random, *partitioner),
@@ -81,9 +83,44 @@ public:
 
   ~AriaFBExecutor() = default;
 
+  // USE_BARRIER, single node: the same phases as start(), separated by the
+  // manager's phase barrier (see AriaFBManager::barrier_start).
+  void barrier_start() {
+    for (;;) {
+      barrier->wait(id); // the manager has prepared the batch (or exits)
+      if (static_cast<ExecutorStatus>(worker_status.load()) ==
+          ExecutorStatus::EXIT)
+        return;
+
+      generate_transactions();
+      read_snapshot();
+      barrier->wait(id);
+
+      commit_transactions();
+      barrier->wait(id);
+      barrier->wait(id); // the manager cleans up the batch
+
+      prepare_calvin_input();
+      barrier->wait(id);
+
+      if (id < n_lock_manager) {
+        schedule_calvin_transactions();
+      } else {
+        run_calvin_transactions();
+      }
+      barrier->wait(id);
+    }
+  }
+
   void start() override {
 
     LOG(INFO) << "AriaFBExecutor " << id << " started. ";
+
+    if (barrier) {
+      barrier_start();
+      LOG(INFO) << "AriaFBExecutor " << id << " exits. ";
+      return;
+    }
 
     for (;;) {
 
@@ -894,6 +931,7 @@ private:
   std::atomic<uint32_t> &epoch, &lock_manager_status, &worker_status,
       &total_abort;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  Barrier *barrier; // the manager's phase barrier (null: status hand-off)
   std::unique_ptr<Partitioner> partitioner;
   WorkloadType workload;
   std::size_t n_lock_manager, n_workers;

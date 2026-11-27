@@ -39,9 +39,35 @@ public:
 
     storages.resize(context.batch_size);
     transactions.resize(context.batch_size);
+    init_phase_barrier();
+  }
+
+  // USE_BARRIER, single node: one phase barrier wait per phase boundary of
+  // coordinator_start() (see CalvinExecutor::barrier_start).
+  void barrier_start() {
+    for (;;) {
+      bool running = !stopFlag.load();
+      if (running) {
+        clear_lock_manager_status();
+        set_worker_status(ExecutorStatus::Analysis);
+      } else {
+        set_worker_status(ExecutorStatus::EXIT);
+      }
+      phase_wait(); // start the batch (or exit)
+      if (!running)
+        return;
+
+      phase_wait(); // analysis done
+      phase_wait(); // execution done
+    }
   }
 
   void coordinator_start() override {
+
+    if (phase_barrier) {
+      barrier_start();
+      return;
+    }
 
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;

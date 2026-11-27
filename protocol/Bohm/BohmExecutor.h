@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "common/Barrier.h"
 #include "common/Percentile.h"
 #include "core/Delay.h"
 #include "core/Worker.h"
@@ -39,11 +40,12 @@ public:
                std::vector<StorageType> &storages, std::atomic<uint32_t> &epoch,
                std::atomic<uint32_t> &worker_status,
                std::atomic<uint32_t> &n_complete_workers,
-               std::atomic<uint32_t> &n_started_workers)
+               std::atomic<uint32_t> &n_started_workers,
+               Barrier *barrier = nullptr)
       : Worker(coordinator_id, id), db(db), context(context),
         transactions(transactions), storages(storages), epoch(epoch),
         worker_status(worker_status), n_complete_workers(n_complete_workers),
-        n_started_workers(n_started_workers),
+        n_started_workers(n_started_workers), barrier(barrier),
         partitioner(coordinator_id, context.coordinator_num),
         workload(coordinator_id, db, random, partitioner),
         init_transaction(false),
@@ -62,9 +64,35 @@ public:
 
   ~BohmExecutor() = default;
 
+  // USE_BARRIER, single node: the same phases as start(), separated by the
+  // manager's phase barrier (see BohmManager::barrier_start).
+  void barrier_start() {
+    for (;;) {
+      barrier->wait(id); // the manager has prepared the batch (or exits)
+      if (static_cast<ExecutorStatus>(worker_status.load()) ==
+          ExecutorStatus::EXIT)
+        return;
+
+      generate_transactions();
+      barrier->wait(id);
+      insert_write_sets();
+      barrier->wait(id);
+      run_transactions();
+      barrier->wait(id);
+      garbage_collect();
+      barrier->wait(id);
+    }
+  }
+
   void start() override {
 
     LOG(INFO) << "BohmExecutor " << id << " started. ";
+
+    if (barrier) {
+      barrier_start();
+      LOG(INFO) << "BohmExecutor " << id << " exits. ";
+      return;
+    }
 
     for (;;) {
 
@@ -401,6 +429,7 @@ private:
   std::vector<StorageType> &storages;
   std::atomic<uint32_t> &epoch, &worker_status;
   std::atomic<uint32_t> &n_complete_workers, &n_started_workers;
+  Barrier *barrier; // the manager's phase barrier (null: status hand-off)
   BohmPartitioner partitioner;
   WorkloadType workload;
   bool init_transaction;

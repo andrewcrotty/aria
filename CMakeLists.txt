@@ -7,7 +7,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -Wall -Wno-long-long -Wno-unuse
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(USE_BARRIER "Use barriers for Aria" ON)
+option(USE_BARRIER "Use phase barriers in the batch protocols (Aria, AriaFB, Bohm, Calvin, Pwv) on a single node" ON)
 option(USE_SMC_BARRIER "Use SmcBarrier" OFF)
 option(NO_MANAGER "Use worker 0 as manager" OFF)
 

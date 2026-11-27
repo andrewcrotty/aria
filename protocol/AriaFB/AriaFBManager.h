@@ -42,9 +42,42 @@ public:
     storages.resize(context.batch_size);
     transactions.resize(context.batch_size);
     partition_ids.resize(context.batch_size);
+    init_phase_barrier();
+  }
+
+  // USE_BARRIER, single node: one phase barrier wait per phase boundary of
+  // coordinator_start() (see AriaFBExecutor::barrier_start). On a single node
+  // the abort-tid exchange has no peers, so only cleanup_batch() and the lock
+  // manager reset remain between the commit and the fallback.
+  void barrier_start() {
+    for (;;) {
+      bool running = !stopFlag.load();
+      if (running) {
+        epoch.fetch_add(1);
+        set_worker_status(ExecutorStatus::AriaFB_READ);
+      } else {
+        set_worker_status(ExecutorStatus::EXIT);
+      }
+      phase_wait(); // start the batch (or exit)
+      if (!running)
+        return;
+
+      phase_wait(); // snapshot reads and reservations done
+      phase_wait(); // commits done
+      cleanup_batch();
+      clear_lock_manager_status();
+      phase_wait(); // release the fallback preparation
+      phase_wait(); // fallback preparation done
+      phase_wait(); // fallback (Calvin) execution done
+    }
   }
 
   void coordinator_start() override {
+
+    if (phase_barrier) {
+      barrier_start();
+      return;
+    }
 
     std::size_t n_workers = context.worker_num;
     std::size_t n_coordinators = context.coordinator_num;

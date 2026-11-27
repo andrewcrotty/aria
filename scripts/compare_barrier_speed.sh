@@ -52,6 +52,7 @@ while getopts "t:B:F:r:y:c:Rs:o:" opt; do
     *) sed -n '2,25p' "$0"; exit 2 ;;
   esac
 done
+check_protocol
 if [[ -n $SIZES && -n $FRACTIONS ]]; then
   echo "use -B or -F, not both"
   exit 2
